@@ -100,9 +100,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         state.slName = response.globals.slName || 'Non identifié';
 
                         // Global Shift Sync
-                        const isOnline = state.slName !== 'Non identifié' && state.slName !== '';
+                        const isOnline = state.slName !== 'Non identifié' && state.slName !== '' && !response.globals.shiftEndTime;
                         state.isShiftActive = isOnline;
-                        state.startTime = isOnline && response.globals.shiftStartTime ? new Date(response.globals.shiftStartTime) : null;
+
+                        // Robust Date Parsing
+                        if (isOnline && response.globals.shiftStartTime) {
+                            const parsedDate = new Date(response.globals.shiftStartTime);
+                            state.startTime = isNaN(parsedDate.getTime()) ? null : parsedDate;
+                        } else {
+                            state.startTime = null;
+                        }
                     }
 
                     // Smart Merge of movements
@@ -796,13 +803,15 @@ document.addEventListener('DOMContentLoaded', () => {
     window.confirmStartShift = () => {
         closeModal();
         const now = new Date();
-        const formattedTime = `${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')} `;
+        const formattedDate = now.toLocaleDateString('fr-FR');
+        const formattedTime = now.toLocaleTimeString('fr-FR');
+        const sheetDateTime = `${formattedDate} ${formattedTime}`;
 
         state.isShiftActive = true;
         state.startTime = now;
         syncShiftAction('shift_start', {
             pseudo: state.slName,
-            startTime: formattedTime
+            startTime: sheetDateTime
         });
 
         saveAndSyncGlobals();
@@ -811,16 +820,23 @@ document.addEventListener('DOMContentLoaded', () => {
     window.confirmStopShift = () => {
         closeModal();
         const now = new Date();
-        const formattedTime = `${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')} `;
-        const startTimeStr = `${state.startTime.toLocaleDateString('fr-FR')} ${state.startTime.toLocaleTimeString('fr-FR')} `;
+        const formattedDate = now.toLocaleDateString('fr-FR');
+        const formattedTime = now.toLocaleTimeString('fr-FR');
+        const sheetDateTime = `${formattedDate} ${formattedTime}`;
 
-        const totalDeployed = state.fleet.reduce((a, b) => a + b.count, 0);
-        const totalDestroyed = state.history.filter(h => h.type === 'LOSS').reduce((a, b) => a + b.count, 0);
+        // Safety check for startTime
+        let startTimeStr = 'INCONNU';
+        if (state.startTime instanceof Date && !isNaN(state.startTime)) {
+            startTimeStr = `${state.startTime.toLocaleDateString('fr-FR')} ${state.startTime.toLocaleTimeString('fr-FR')}`;
+        }
+
+        const totalDeployed = state.fleet.reduce((a, b) => a + (b.count || 0), 0);
+        const totalDestroyed = state.fleet.reduce((a, b) => a + (b.destroyed || 0), 0);
 
         syncShiftAction('shift_stop', {
             pseudo: state.slName,
-            startTime: startTimeStr,
-            endTime: formattedTime,
+            startTime: startTimeStr, // Already FR formatted
+            endTime: sheetDateTime,
             totalDeployed: totalDeployed,
             totalDestroyed: totalDestroyed,
             personnel: state.personnel
@@ -967,6 +983,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function syncShiftAction(action, data) {
         console.log(`[SHIFT] ${action} `, data);
+        state.isSyncing = true;
+        const syncBtn = document.getElementById('sync-btn');
+        if (syncBtn) syncBtn.classList.add('spin');
+
         fetch(API_URL, {
             method: 'POST',
             mode: 'no-cors',
@@ -975,7 +995,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 action: action,
                 data: data
             })
-        }).catch(err => console.error("Shift Sync Error", err));
+        })
+            .then(() => {
+                state.isSyncing = false;
+                if (syncBtn) syncBtn.classList.remove('spin');
+                // Force a refresh to see the new state globally
+                setTimeout(() => init(true), 1000);
+            })
+            .catch(err => {
+                state.isSyncing = false;
+                if (syncBtn) syncBtn.classList.remove('spin');
+                console.error("Shift Sync Error", err);
+            });
     }
 
     // --- TIMER ---

@@ -270,13 +270,26 @@ function stopShift(ss, data) {
  * Lecture des paramètres globaux (Colonne K)
  */
 function getGlobalSettings(sheet) {
+  let startVal = sheet.getRange(4, 9).getValue();
+  let endVal = sheet.getRange(4, 10).getValue();
+  
+  // If it's a string from the Sheet (FR format), try to ensure it's ISO for the app
+  // Apps Script often auto-converts cell dates to Date objects, but if it's a string:
+  if (!(startVal instanceof Date) && startVal && String(startVal).includes('/')) {
+    // Basic FR to ISO-like hint: DD/MM/YYYY -> MM/DD/YYYY for JS Date constructor (simplistic but often works in GAS)
+    // Actually, GAS is powerful. Let's just try to send it as is if it's not a Date, 
+    // or better, try new Date(val).
+    const testDate = new Date(startVal);
+    if (!isNaN(testDate.getTime())) startVal = testDate;
+  }
+
   return {
     supply: Number(sheet.getRange(6, 11).getValue()),    // K6
     personnel: Number(sheet.getRange(5, 11).getValue()), // K5
     medics: Number(sheet.getRange(7, 11).getValue()),    // K7
     slName: String(sheet.getRange(4, 8).getValue()),     // H4
-    shiftStartTime: sheet.getRange(4, 9).getValue(),     // I4
-    shiftEndTime: sheet.getRange(4, 10).getValue()       // J4
+    shiftStartTime: (startVal instanceof Date) ? startVal.toISOString() : startVal,
+    shiftEndTime: (endVal instanceof Date) ? endVal.toISOString() : endVal
   };
 }
 
