@@ -275,7 +275,8 @@ function getGlobalSettings(sheet) {
     personnel: Number(sheet.getRange(5, 11).getValue()), // K5
     medics: Number(sheet.getRange(7, 11).getValue()),    // K7
     slName: String(sheet.getRange(4, 8).getValue()),     // H4
-    shiftStartTime: sheet.getRange(4, 9).getValue()      // I4
+    shiftStartTime: sheet.getRange(4, 9).getValue(),     // I4
+    shiftEndTime: sheet.getRange(4, 10).getValue()       // J4
   };
 }
 
