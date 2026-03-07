@@ -27,8 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedSettings = JSON.parse(localStorage.getItem('fof_logi_settings'));
     if (savedSettings) {
         state.slName = savedSettings.slName || 'Non identifié';
-        state.isShiftActive = savedSettings.shiftActive || false;
-        state.startTime = savedSettings.shiftActive ? new Date(savedSettings.shiftStartTime) : null;
         state.personnel = savedSettings.personnel || 0;
         state.medics = savedSettings.medics || 0;
     }
@@ -99,7 +97,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         state.supply = response.globals.supply;
                         state.personnel = response.globals.personnel;
                         state.medics = response.globals.medics;
-                        state.slName = response.globals.slName;
+                        state.slName = response.globals.slName || 'Non identifié';
+
+                        // Global Shift Sync
+                        const isOnline = state.slName !== 'Non identifié' && state.slName !== '';
+                        state.isShiftActive = isOnline;
+                        state.startTime = isOnline && response.globals.shiftStartTime ? new Date(response.globals.shiftStartTime) : null;
                     }
 
                     // Smart Merge of movements
