@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.currentTab === 'dashboard') renderDashboard(container);
         else if (state.currentTab === 'fleet') renderFleet(container);
         else if (state.currentTab === 'ops') renderOps(container);
-        else if (state.currentTab === 'admin') renderAdmin(container);
+        else if (state.currentTab === 'service') renderService(container);
 
         updateGlobalStats();
         lucide.createIcons();
@@ -402,70 +402,63 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
     };
 
-    function renderAdmin(container) {
+    function renderService(container) {
         container.innerHTML = `
             <div class="mb-6">
-                <h2 class="text-xl font-black uppercase tracking-tight">Administration</h2>
+                <h2 class="text-xl font-black uppercase tracking-tight italic">Service Logistique</h2>
+                <p class="text-[9px] text-slate-500 uppercase tracking-widest mt-1">Prise de poste et gestion de session</p>
             </div>
 
-            <div class="space-y-4">
-                <!-- PERSONNEL & MEDICS -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="bg-slate-900 border border-white/5 rounded-xl p-5 relative overflow-hidden">
-                        <div class="category-accent bg-orange-500"></div>
-                        <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-4">Effectifs Logistiques</label>
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-4">
-                                <i data-lucide="users" class="w-6 h-6 text-orange-500"></i>
-                                <span class="mono text-2xl font-bold text-white">${state.personnel}</span>
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="adjustPersonnel(-1)" class="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center font-bold text-slate-400">-</button>
-                                <button onclick="adjustPersonnel(1)" class="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center font-bold text-orange-500">+</button>
-                            </div>
+            <div class="space-y-6">
+                <!-- SHIFT CARD -->
+                <div class="bg-slate-900 border border-white/5 rounded-2xl p-6 relative overflow-hidden shadow-2xl">
+                    <div class="absolute top-0 left-0 w-1 h-full ${state.isShiftActive ? 'bg-green-500' : 'bg-red-500'}"></div>
+                    
+                    <div class="flex items-center gap-4 mb-8">
+                        <div class="w-12 h-12 rounded-2xl ${state.isShiftActive ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'} flex items-center justify-center border border-white/5">
+                            <i data-lucide="${state.isShiftActive ? 'user-check' : 'user-x'}" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <span class="text-[8px] text-slate-500 uppercase font-black tracking-widest block mb-1">Statut Actuel</span>
+                            <h3 class="font-black text-lg uppercase tracking-tighter ${state.isShiftActive ? 'text-green-500' : 'text-red-500'}">
+                                ${state.isShiftActive ? 'En Service' : 'Hors Service'}
+                            </h3>
                         </div>
                     </div>
 
-                    <div class="bg-slate-900 border border-white/5 rounded-xl p-5 relative overflow-hidden">
-                        <div class="category-accent bg-pink-500"></div>
-                        <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-4">Unités EVASAN / V2</label>
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-4">
-                                <i data-lucide="heart-pulse" class="w-6 h-6 text-pink-500"></i>
-                                <span class="mono text-2xl font-bold text-white">${state.medics}</span>
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="adjustMedics(-1)" class="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center font-bold text-slate-400">-</button>
-                                <button onclick="adjustMedics(1)" class="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center font-bold text-pink-500">+</button>
-                            </div>
-                        </div>
+                    <div class="bg-slate-950/50 rounded-2xl p-4 border border-white/5 mb-6">
+                        <label class="text-[8px] text-slate-600 uppercase font-black block mb-2 tracking-[0.2em]">Identifiant SL Logi</label>
+                        <input type="text" id="sl-name-input" value="${state.slName === 'Non identifié' ? '' : state.slName}" 
+                               placeholder="ENTREZ VOTRE NOM..."
+                               class="w-full bg-transparent text-white text-base font-black outline-none placeholder:text-slate-800 uppercase">
                     </div>
-                </div>
 
-                <div class="bg-slate-900 border border-white/5 rounded-xl p-5">
-                    <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-4">Gestion Supply de Base</label>
-                    <div class="flex items-center gap-4">
-                        <span id="admin-supply-display" class="mono text-2xl font-bold text-blue-400">${calculateRemainingSupply()}</span>
-                        <div class="flex gap-2">
-                            <button onclick="adjustSupplyLimit(500)" class="bg-slate-800 px-3 py-1 rounded text-[10px] font-bold text-white">+500 Base</button>
-                            <button onclick="adjustSupplyLimit(-500)" class="bg-slate-800 px-3 py-1 rounded text-[10px] font-bold text-red-400">-500 Base</button>
-                        </div>
+                    <button onclick="toggleShift()"
+                        class="w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs transition-all active:scale-95 shadow-xl ${state.isShiftActive ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/40' : 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/40'}">
+                        ${state.isShiftActive ? '🔴 Terminer mon service' : '🟢 Démarrer mon service'}
+                    </button>
+                    
+                    ${state.isShiftActive && state.startTime ? `
+                    <div class="mt-6 pt-6 border-t border-white/5 flex justify-between items-center">
+                        <span class="text-[8px] text-slate-500 uppercase font-black tracking-widest">Début de session</span>
+                        <span class="mono text-[10px] text-slate-400 font-bold">${state.startTime.toLocaleTimeString('fr-FR')}</span>
                     </div>
-                    <small class="text-[9px] text-slate-600 mt-2 block">Supply Initial: ${state.supply}</small>
+                    ` : ''}
                 </div>
 
-                <div class="bg-slate-900 border border-white/5 rounded-xl p-5">
-                    <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-4">Service SL Logistique</label>
-                    <input type="text" id="sl-name-input" value="${state.slName}" placeholder="Votre nom..."
-                        class="w-full bg-slate-800 text-white rounded p-3 mb-4 text-xs font-bold outline-none border border-white/5">
-                        <button onclick="toggleShift()"
-                            class="w-full py-4 rounded-xl font-black uppercase tracking-tighter transition-all ${state.isShiftActive ? 'bg-red-600 shadow-lg shadow-red-900/20' : 'bg-green-600 shadow-lg shadow-green-900/20'}">
-                            ${state.isShiftActive ? 'Finir le service' : 'Prendre le service'}
-                        </button>
+                <!-- UTILITIES -->
+                <div class="grid grid-cols-1 gap-3">
+                    <button onclick="resetAll()" 
+                            class="flex items-center justify-center gap-3 py-4 bg-slate-900/50 border border-white/5 rounded-xl text-red-500/60 hover:text-red-500 hover:bg-red-500/5 transition-all">
+                        <i data-lucide="refresh-ccw" class="w-4 h-4"></i>
+                        <span class="text-[8px] font-black uppercase tracking-widest">Réinitialiser l'application</span>
+                    </button>
                 </div>
 
-                <div class="bg-red-900/10 border border-red-900/20 rounded-xl p-5">
-                    <button onclick="resetAll()" class="w-full text-red-500 font-bold text-xs uppercase tracking-widest">Réinitialiser Localement</button>
+                <div class="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/10">
+                    <p class="text-[9px] text-blue-400/80 leading-relaxed italic text-center">
+                        Note: La gestion des effectifs et du supply se fait directement en cliquant sur les statistiques dans l'en-tête de l'application.
+                    </p>
                 </div>
             </div>
         `;
