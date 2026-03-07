@@ -14,7 +14,13 @@ document.addEventListener('DOMContentLoaded', () => {
         personnel: 0,
         medics: 0,
         fleet: [], // Loaded from API
-        history: []
+        history: [],
+        movements: {}, // Temporary data for Crew Management: { unitKey: { indicatif, mission, status, condition } }
+        expandedCategory: null, // Selected Category to show Vehicles
+        expandedVehicleId: null, // Selected vehicle type to show grid
+        editingUnitKey: null, // Selected unit to show modal
+        isSyncing: false,
+        lastSync: null
     };
 
     // Load settings from local storage
@@ -53,50 +59,101 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- DATA FETCHING ---
-    async function init() {
-        try {
-            const response = await fetch(API_URL);
-            const result = await response.json();
+    window.init = (isSilent = false) => {
+        if (!isSilent) state.isSyncing = true;
+        const syncBtn = document.getElementById('sync-btn');
+        if (syncBtn) syncBtn.classList.add('spin');
 
-            if (result.status === 'success') {
-                // Filter and map backend data to local state format
-                // Assuming backend columns: id, category, name, cost, grade, deployed, crew, status, note
-                state.fleet = result.data
-                    .filter(v => v.id >= 8 && v.name !== "Type de véhicule")
-                    .map(v => ({
-                        id: v.id,
-                        grade: v.grade || '2CL',
-                        cat: v.category,
-                        type: v.name,
-                        cost: parseInt(v.cost) || 0,
-                        count: parseInt(v.deployed) || 0,
-                        inMission: parseInt(v.inMission) || 0,
-                        status: v.status || 'En Base',
-                        crew: v.crew || v.note || '',
-                        color: getCategoryColor(v.category)
-                    }));
+        fetch(`${API_URL}?action=get_data`)
+            .then(res => res.json())
+            .then(response => {
+                state.isSyncing = false;
+                if (syncBtn) syncBtn.classList.remove('spin');
 
-                // Synchronize global settings from backend
-                if (result.globals) {
-                    state.supply = result.globals.supply;
-                    state.personnel = result.globals.personnel;
-                    state.medics = result.globals.medics;
-                    state.slName = result.globals.slName;
+                if (response.status === 'success') {
+                    // Update last sync time
+                    const now = new Date();
+                    state.lastSync = now;
+                    const syncEl = document.getElementById('last-sync');
+                    if (syncEl) syncEl.innerText = `Sinc: ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+                    // Filter and map backend data to local state format
+                    state.fleet = response.data
+                        .filter(v => v.id >= 9 && v.name !== "Type de véhicule")
+                        .map(v => ({
+                            id: v.id,
+                            grade: v.grade || '2CL',
+                            cat: v.category,
+                            type: v.name,
+                            cost: parseInt(v.cost) || 0,
+                            count: parseInt(v.deployed) || 0,
+                            inMission: parseInt(v.inMission) || 0,
+                            status: v.status || 'En Base',
+                            crew: v.crew || v.note || '',
+                            destroyed: parseInt(v.destroyed) || 0, // Ensure destroyed is synced
+                            color: getCategoryColor(v.category)
+                        }));
+
+                    // Synchronize global settings from backend
+                    if (response.globals) {
+                        state.supply = response.globals.supply;
+                        state.personnel = response.globals.personnel;
+                        state.medics = response.globals.medics;
+                        state.slName = response.globals.slName;
+                    }
+
+                    // Smart Merge of movements
+                    if (response.movements) {
+                        Object.keys(response.movements).forEach(indicatif => {
+                            const m = response.movements[indicatif];
+                            const v = state.fleet.find(f => f.type === m.vehicleType);
+                            if (v) {
+                                for (let i = 0; i < v.inMission; i++) {
+                                    const key = `${v.id}_${i}`;
+                                    // Protect local changes: only overwrite if local state is empty or already logged
+                                    if (!state.movements[key] || state.movements[key].isLogged) {
+                                        state.movements[key] = { ...m, isLogged: true };
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    render();
+                } else {
+                    console.error("API Error:", response.message);
                 }
+            })
+            .catch(err => {
+                state.isSyncing = false;
+                if (syncBtn) syncBtn.classList.remove('spin');
+                console.error("Initialization Error", err);
+            });
 
-                render();
-            } else {
-                console.error("API Error:", result.message);
-            }
-        } catch (error) {
-            console.error("Connection Error:", error);
+        // Start Timer only once
+        if (!window.timerStarted) {
+            startTimer();
+            startBackgroundSync();
+            window.timerStarted = true;
         }
+    };
 
-        // Start Timer
-        startTimer();
+    window.manualRefresh = () => {
+        if (state.isSyncing) return;
+        init(false);
+    };
+
+    function startBackgroundSync() {
+        // Poll every 30 seconds
+        setInterval(() => {
+            if (!state.isSyncing) {
+                init(true);
+            }
+        }, 30000);
     }
 
     function getCategoryColor(cat) {
+        if (!cat) return '#a855f7';
         const c = cat.toUpperCase();
         if (c.includes('TRANSPORT')) return '#facc15';
         if (c.includes('MAINTENANCE')) return '#ef4444';
@@ -108,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- RENDERERS ---
-    function render() {
+    window.render = () => {
         const container = document.getElementById('main-content');
         if (!container) return;
 
@@ -146,14 +203,17 @@ document.addEventListener('DOMContentLoaded', () => {
             deployed.forEach(v => {
                 const statusColor = v.status === 'Détruit' ? 'text-red-500' : 'text-green-500';
                 html += `
-                    <div class="bg-slate-800/40 rounded-xl p-4 border border-white/5 relative overflow-hidden">
+                    <div onclick="jumpToOpsCategory('${v.cat}')" class="bg-slate-800/40 rounded-xl p-4 border border-white/5 relative overflow-hidden cursor-pointer active:scale-95 transition-all group hover:bg-slate-800/60">
                         <div class="category-accent" style="background-color: ${v.color}"></div>
                         <div class="flex justify-between items-start mb-2">
                             <div>
                                 <span class="text-[8px] font-black text-slate-500 uppercase tracking-widest">${v.cat}</span>
-                                <h3 class="font-bold text-sm text-white">${v.type}</h3>
+                                <h3 class="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">${v.type}</h3>
                             </div>
-                            <span class="mono text-lg font-black text-blue-400">x${v.count}</span>
+                            <div class="flex flex-col items-end">
+                                <span class="mono text-lg font-black text-blue-400">x${v.count}</span>
+                                <span class="text-[7px] text-slate-600 uppercase font-black">Déployés</span>
+                            </div>
                         </div>
                         <div class="flex items-center gap-2 mt-3">
                             <span class="status-pill bg-opacity-20 ${v.status === 'Détruit' ? 'bg-red-500 text-red-500' : 'bg-green-500 text-green-500'} text-[8px]">${v.status}</span>
@@ -167,6 +227,12 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = html;
     }
 
+    window.jumpToOpsCategory = (cat) => {
+        state.currentTab = 'ops';
+        state.expandedCategory = cat;
+        switchTab('ops');
+    };
+
     function renderFleet(container) {
         let html = `
             <div class="mb-6">
@@ -178,37 +244,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         state.fleet.forEach(v => {
             html += `
-                <div class="bg-slate-900 border border-white/5 rounded-xl overflow-hidden relative">
+                <div onclick="deployVehicle(${v.id})" class="bg-slate-900 border border-white/5 rounded-xl overflow-hidden relative cursor-pointer active:scale-95 transition-all group hover:border-blue-500/30">
                     <div class="category-accent" style="background-color: ${v.color}"></div>
                     <div class="p-4">
                         <div class="flex justify-between items-start">
                             <div>
                                 <span class="px-1.5 py-0.5 bg-slate-800 text-[8px] font-black rounded text-slate-400 uppercase mb-1 inline-block">${v.grade}</span>
-                                <h3 class="font-bold text-sm leading-tight">${v.type}</h3>
+                                <h3 class="font-bold text-sm leading-tight group-hover:text-blue-400 transition-colors">${v.type}</h3>
                             </div>
                             <span class="mono text-xs font-bold text-slate-500">${v.cost} pts</span>
                         </div>
                         
-                        <div class="mt-4 flex flex-col gap-2">
-                        <div class="flex items-center justify-between">
-                            <span class="text-[9px] text-slate-500 uppercase font-black tracking-widest">Total dispos</span>
-                            <div class="flex items-center gap-3">
-                                <button onclick="changeCount(${v.id}, -1)" class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center font-bold text-slate-400">-</button>
-                                <span class="mono text-sm font-bold w-4 text-center text-white">${v.count}</span>
-                                <button onclick="changeCount(${v.id}, 1)" class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center font-bold text-blue-500">+</button>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-[9px] text-slate-500 uppercase font-black tracking-widest">Sur le terrain</span>
-                            <div class="flex items-center gap-3">
-                                <button onclick="changeMissionCount(${v.id}, -1)" class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center font-bold text-slate-400">-</button>
-                                <span class="mono text-sm font-bold w-4 text-center ${v.inMission > 0 ? 'text-green-500' : 'text-slate-500'}">${v.inMission}</span>
-                                <button onclick="changeMissionCount(${v.id}, 1)" class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center font-bold text-green-500">+</button>
+                        <div class="mt-6 flex items-center justify-between">
+                            <span class="text-[7px] text-slate-600 uppercase font-black tracking-[0.2em]">Cliquer pour ajouter</span>
+                            <div class="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20 group-hover:bg-blue-500 group-hover:text-white transition-all">
+                                <i data-lucide="plus" class="w-3 h-3"></i>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
         `;
         });
 
@@ -217,70 +271,130 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderOps(container) {
-        const active = state.fleet.filter(v => v.count > 0);
+        const deployedUnits = state.fleet.filter(v => v.count > 0);
+        const categories = [...new Set(deployedUnits.map(v => v.cat))];
+
         let html = `
             <div class="mb-6">
-                <h2 class="text-xl font-black uppercase tracking-tight">Suivi Opérations</h2>
-                <p class="text-[9px] text-slate-500 uppercase tracking-widest">Attribution des équipages et pertes</p>
+                <h2 class="text-xl font-black uppercase tracking-tight">Opérations Tactiques</h2>
+                <p class="text-[9px] text-slate-500 uppercase tracking-widest italic">${deployedUnits.length} Modèles déployés</p>
             </div>
         `;
 
-        if (active.length === 0) {
-            html += `<div class="py-20 text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest">Aucun véhicule déployé en opération</div>`;
+        if (categories.length === 0) {
+            html += `<div class="py-20 text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest italic tracking-tighter">AUCUN VÉHICULE EN MISSION</div>`;
         } else {
             html += `<div class="space-y-3">`;
-            active.forEach(v => {
+            categories.forEach(cat => {
+                const isCatExpanded = state.expandedCategory === cat;
+                const catVehicles = deployedUnits.filter(v => v.cat === cat);
+                const totalDeployed = catVehicles.reduce((a, b) => a + b.count, 0);
+                const totalInMission = catVehicles.reduce((a, b) => a + b.inMission, 0);
+                const totalDestroyed = catVehicles.reduce((a, b) => a + (b.destroyed || 0), 0);
+
                 html += `
-                    <div class="bg-slate-800 border border-white/5 rounded-xl p-4">
-                        <div class="flex justify-between items-center mb-3">
-                            <h4 class="font-bold text-sm text-white">${v.type} <span class="text-blue-500 text-xs">(x${v.count})</span></h4>
-                            <div class="flex gap-2 items-center bg-slate-900 border border-white/5 px-2 py-1 rounded-lg">
-                            <span class="text-[8px] text-slate-500 font-black uppercase tracking-widest mr-1">Tern</span>
-                            <button onclick="changeMissionCount(${v.id}, -1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500">-</button>
-                            <span class="mono text-[10px] font-bold w-4 text-center text-green-500">${v.inMission}</span>
-                            <button onclick="changeMissionCount(${v.id}, 1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-xs font-bold text-green-500">+</button>
-                            <span class="text-[10px] text-slate-600 font-bold ml-1">/ ${v.count}</span>
-                        </div>
-                        </div>
-                        <div class="flex gap-1.5 mb-3">
-                                <button onclick="updateStatus(${v.id}, 'Opérationnel')" 
-                                        class="px-2 py-1 rounded text-[9px] font-black uppercase tracking-tighter border transition-all ${v.status === 'Opérationnel' ? 'bg-green-500/20 border-green-500 text-green-500' : 'bg-slate-900 border-white/5 text-slate-500'}">
-                                    OPR
-                                </button>
-                                <button onclick="updateStatus(${v.id}, 'En Base')" 
-                                        class="px-2 py-1 rounded text-[9px] font-black uppercase tracking-tighter border transition-all ${v.status === 'En Base' ? 'bg-blue-500/20 border-blue-500 text-blue-500' : 'bg-slate-900 border-white/5 text-slate-500'}">
-                                    BASE
-                                </button>
-                                <button onclick="updateStatus(${v.id}, 'Détruit')" 
-                                        class="px-2 py-1 rounded text-[9px] font-black uppercase tracking-tighter border transition-all ${v.status === 'Détruit' ? 'bg-red-500/20 border-red-500 text-red-500' : 'bg-slate-900 border-white/5 text-slate-500'}">
-                                    OUT
-                                </button>
+                    <!-- Level 1: Category -->
+                    <div class="bg-slate-900/60 border border-white/5 rounded-2xl overflow-hidden shadow-lg transition-all">
+                        <div onclick="toggleCategoryExpand('${cat}')" class="p-4 flex justify-between items-center cursor-pointer active:bg-slate-800 transition-colors">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-xl flex items-center justify-center border border-white/10" style="background-color: ${getCategoryColor(cat)}20">
+                                    <i data-lucide="layers" class="w-4 h-4" style="color: ${getCategoryColor(cat)}"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-black text-xs text-white uppercase tracking-tighter">${cat}</h4>
+                                    <p class="text-[8px] text-slate-500 font-bold uppercase tracking-widest">
+                                        <span class="text-blue-400">${totalDeployed}</span> DÉPLOYÉ(S) | 
+                                        <span class="text-green-400">${totalInMission}</span> MISSION | 
+                                        <span class="text-red-500">${totalDestroyed}</span> PERTE(S)
+                                    </p>
+                                </div>
                             </div>
-                        <div class="flex items-center gap-2">
-                            <div class="flex-1 bg-slate-900 rounded p-2 flex items-center gap-2">
-                                <i data-lucide="user" class="w-3 h-3 text-slate-500"></i>
-                                <input type="text" value="${v.crew}" placeholder="Nom du pilote..." 
-                                       onblur="updateCrew(${v.id}, this.value)"
-                                       class="bg-transparent text-[10px] text-white w-full outline-none">
-                            </div>
-                            <button onclick="reportLoss(${v.id})" class="bg-red-500/10 text-red-500 p-2 rounded">
-                                <i data-lucide="skull" class="w-4 h-4"></i>
-                            </button>
+                            <i data-lucide="${isCatExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4 text-slate-600"></i>
                         </div>
+
+                        ${isCatExpanded ? `
+                        <div class="px-3 pb-3 space-y-2 animate-slide-up">
+                            ${catVehicles.map(v => {
+                    const isVehExpanded = state.expandedVehicleId === v.id;
+                    return `
+                                <!-- Level 2: Vehicle Type -->
+                                <div class="bg-slate-800/80 border border-white/5 rounded-xl overflow-hidden shadow-md">
+                                    <div onclick="toggleVehicleExpand(${v.id})" class="p-3 flex justify-between items-center cursor-pointer active:bg-slate-700/50">
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-1 h-1 rounded-full animate-pulse" style="background-color: ${v.color}"></div>
+                                            <h5 class="font-black text-[10px] text-slate-300 uppercase tracking-tight">
+                                                ${v.type} 
+                                                <span class="text-blue-500 ml-1">x${v.count}</span>
+                                                ${v.inMission > 0 ? `<span class="text-green-500 ml-1">(${v.inMission} en mission)</span>` : ''}
+                                            </h5>
+                                        </div>
+                                        <i data-lucide="${isVehExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5 text-slate-500"></i>
+                                    </div>
+
+                                    ${isVehExpanded ? `
+                                    <!-- Level 3: Unit Grid -->
+                                    <div class="p-3 bg-slate-900/40 border-t border-white/5">
+                                        <div class="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                                             ${Array.from({ length: v.count }).map((_, i) => {
+                        const unitKey = `${v.id}_${i}`;
+                        const m = state.movements[unitKey];
+                        // Bleu si en base (pas de mission), Vert si en mission active
+                        const hasActiveMission = m && m.mission && m.status === 'En cours';
+                        const statusColor = hasActiveMission ? 'bg-green-500' : 'bg-blue-500';
+
+                        return `
+                                                    <button onclick="openUnitModal('${unitKey}')" 
+                                                            class="aspect-square bg-slate-800 rounded-lg border border-white/5 flex flex-col items-center justify-center relative active:scale-90 transition-all shadow-inner">
+                                                        <span class="text-[9px] font-black text-white/50 uppercase italic">V.${i + 1}</span>
+                                                        <div class="w-1.5 h-1.5 rounded-full ${statusColor} mt-1 shadow-lg"></div>
+                                                    </button>
+                                                `;
+                    }).join('')}
+                                        </div>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                                `;
+                }).join('')}
+                        </div>
+                        ` : ''}
                     </div>
                 `;
             });
             html += `</div>`;
         }
         container.innerHTML = html;
+
+        if (state.editingUnitKey) renderUnitModal(container);
     }
+
+
+    window.toggleCategoryExpand = (cat) => {
+        state.expandedCategory = state.expandedCategory === cat ? null : cat;
+        render();
+    };
+
+    window.toggleVehicleExpand = (id) => {
+        state.expandedVehicleId = state.expandedVehicleId === id ? null : id;
+        render();
+    };
+
+    window.openUnitModal = (unitKey) => {
+        state.editingUnitKey = unitKey;
+        render();
+    };
+
+    window.closeUnitModal = () => {
+        state.editingUnitKey = null;
+        render();
+    };
 
     function renderAdmin(container) {
         container.innerHTML = `
             <div class="mb-6">
                 <h2 class="text-xl font-black uppercase tracking-tight">Administration</h2>
             </div>
-            
+
             <div class="space-y-4">
                 <!-- PERSONNEL & MEDICS -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -329,12 +443,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <div class="bg-slate-900 border border-white/5 rounded-xl p-5">
                     <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-4">Service SL Logistique</label>
-                    <input type="text" id="sl-name-input" value="${state.slName}" placeholder="Votre nom..." 
-                           class="w-full bg-slate-800 text-white rounded p-3 mb-4 text-xs font-bold outline-none border border-white/5">
-                    <button onclick="toggleShift()" 
+                    <input type="text" id="sl-name-input" value="${state.slName}" placeholder="Votre nom..."
+                        class="w-full bg-slate-800 text-white rounded p-3 mb-4 text-xs font-bold outline-none border border-white/5">
+                        <button onclick="toggleShift()"
                             class="w-full py-4 rounded-xl font-black uppercase tracking-tighter transition-all ${state.isShiftActive ? 'bg-red-600 shadow-lg shadow-red-900/20' : 'bg-green-600 shadow-lg shadow-green-900/20'}">
-                        ${state.isShiftActive ? 'Finir le service' : 'Prendre le service'}
-                    </button>
+                            ${state.isShiftActive ? 'Finir le service' : 'Prendre le service'}
+                        </button>
                 </div>
 
                 <div class="bg-red-900/10 border border-red-900/20 rounded-xl p-5">
@@ -345,29 +459,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- CORE ACTIONS ---
+    window.deployVehicle = (id) => {
+        const v = state.fleet.find(x => x.id === id);
+        if (v) {
+            v.count++;
+            state.supply -= v.cost; // Déduction directe du supply
+            updateVehicleStatusLocally(v);
+            render();
+            syncVehicle(v);
+            saveAndSyncGlobals(); // Sync le nouveau supply au backend
+
+            // Notification visuelle discrète
+            const statsContainer = document.querySelector('#stat-active')?.parentElement;
+            if (statsContainer) {
+                statsContainer.classList.add('scale-110', 'brightness-125');
+                setTimeout(() => statsContainer.classList.remove('scale-110', 'brightness-125'), 300);
+            }
+        }
+    };
+
     window.changeCount = (id, delta) => {
         const v = state.fleet.find(x => x.id === id);
-        if (!v) return;
-        if (v.count + delta < 0) return;
-
-        v.count += delta;
-        if (v.count > 0 && v.status === 'Pas déployé') v.status = 'Opérationnel';
-        if (v.count === 0 && v.status === 'Opérationnel') v.status = 'Pas déployé';
         if (v) {
             v.count = Math.max(0, v.count + delta);
             // Limit inMission by new count
             if (v.inMission > v.count) v.inMission = v.count;
 
-            updateVehicleStatusLocally(v);
-            render();
-            syncVehicle(v);
-        }
-    };
-
-    window.changeMissionCount = (id, delta) => {
-        const v = state.fleet.find(x => x.id === id);
-        if (v) {
-            v.inMission = Math.min(v.count, Math.max(0, v.inMission + delta));
             updateVehicleStatusLocally(v);
             render();
             syncVehicle(v);
@@ -392,15 +509,110 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    window.updateMovementField = (id, field, value) => {
+        if (!state.movements[id]) {
+            state.movements[id] = { indicatif: '', mission: '', status: 'En cours', condition: '100%' };
+        }
+        state.movements[id][field] = value;
+        // Pas de render() ici par défaut pour éviter de couper la saisie des inputs, 
+        // les boutons eux appellent render() explicitement.
+    };
+
+    window.syncMovement = (unitKey) => {
+        const vid = parseInt(unitKey.split('_')[0]);
+        const v = state.fleet.find(x => x.id === vid);
+        const m = state.movements[unitKey];
+        if (!v || !m) return;
+
+        if (!m.indicatif) {
+            alert("Veuillez saisir un Indicatif avant le départ.");
+            return;
+        }
+
+        const isFinished = m.status === 'Terminé' || m.status === 'Échec';
+        const isNewMission = !m.isLogged;
+        const isHS = m.condition === 'HS';
+
+        // Si c'est une validation de mission déjà en cours (sans changement de statut final et pas HS),
+        // on évite de renvoyer un log dans le Sheet pour éviter les doublons.
+        if (!isNewMission && !isFinished && !isHS) {
+            console.log("[SYNC] Mission Validation - Local only");
+            render();
+            return;
+        }
+
+        // Logique Mission
+        if (isNewMission && !isFinished && !isHS) {
+            // Départ mission
+            v.inMission = Math.min(v.count, (v.inMission || 0) + 1);
+        } else if ((isFinished || isHS) && m.isLogged) {
+            // Fin de mission (ou destruction en mission)
+            v.inMission = Math.max(0, (v.inMission || 0) - 1);
+        }
+
+        // Logique Destruction (HS)
+        if (isHS) {
+            v.destroyed = (v.destroyed || 0) + 1;
+            v.count = Math.max(0, v.count - 1);
+            delete state.movements[unitKey];
+            // Nettoyage de l'ID si c'était le dernier du type
+            if (v.count === 0) {
+                state.movements = Object.fromEntries(
+                    Object.entries(state.movements).filter(([key]) => !key.startsWith(`${vid}_`))
+                );
+            }
+        }
+
+        // Marquer comme loggué
+        m.isLogged = true;
+
+        // Mise à jour Statut Auto
+        if (v.count === 0) v.status = "Pas déployé";
+        else if (v.inMission > 0) v.status = "Opérationnel";
+        else v.status = "En Base";
+
+        // Sync vers GSheet (Véhicule)
+        syncVehicle(v);
+
+        // Sync vers GSheet (Log périodique / Équipage)
+        fetch(API_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({
+                action: 'log_equipage',
+                data: {
+                    vehicleType: v.type,
+                    idIndicatif: m.indicatif,
+                    crew: m.crew || v.crew || "Personnel",
+                    mission: m.mission,
+                    status: isHS ? "VÉHICULE DÉTRUIT" : m.status,
+                    condition: "'" + m.condition, // Force format texte Google Sheets
+                    remark: m.remark || ""
+                }
+            })
+        }).then(() => {
+            if (isHS) showSuccessModal(v.type, m.indicatif, true);
+            else if (isFinished) {
+                delete state.movements[unitKey];
+                showSuccessModal(v.type, m.indicatif, true);
+            } else {
+                showSuccessModal(v.type, m.indicatif, false);
+            }
+            render();
+        }).catch(err => console.error("Sync Error", err));
+    }
+
     window.updateStatus = (id, status) => {
         const v = state.fleet.find(x => x.id === id);
         if (v) {
             if (status === 'Opérationnel') {
+                // Déjà géré par le bouton ? Si on force le statut global
                 v.inMission = v.count;
             } else if (status === 'En Base' || status === 'Pas déployé') {
                 v.inMission = 0;
             } else if (status === 'Détruit') {
-                state.history.push({ type: 'LOSS', vehicle: v.type, count: v.count, time: new Date() });
+                v.destroyed = (v.destroyed || 0) + v.count;
                 v.count = 0;
                 v.inMission = 0;
             }
@@ -411,40 +623,41 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.reportLoss = (id) => {
-        if (!confirm("Confirmer la destruction d'une unité ?")) return;
+        if (!confirm("Confirmer la perte (destruction) d'une unité ?")) return;
         const v = state.fleet.find(x => x.id === id);
         if (v && v.count > 0) {
-            state.history.push({ type: 'LOSS', vehicle: v.type, count: 1, time: new Date() });
+            v.destroyed = (v.destroyed || 0) + 1;
             v.count--;
-            if (v.count === 0) v.status = 'Détruit';
+            // On ne rend pas les points de supply car le véhicule est détruit
+            updateVehicleStatusLocally(v);
             render();
             syncVehicle(v);
         }
     };
 
-    function calculateRemainingSupply() {
-        let cost = 0;
-        state.fleet.forEach(v => {
-            // Include cost of deployed AND destroyed units? 
-            // Previous logic: supplyCost += (v.deployed * v.cost) for Operational and Destroyed
-            if (v.status === 'Opérationnel' || v.status === 'Détruit') {
-                cost += (v.count * v.cost);
-            }
-        });
-        // We also need to add history losses if v.count was reset
-        state.history.filter(h => h.type === 'LOSS').forEach(h => {
-            const vRef = state.fleet.find(f => f.type === h.vehicle);
-            if (vRef) cost += (h.count * vRef.cost);
-        });
+    window.cancelDeployment = (id) => {
+        if (!confirm("Annuler le déploiement ? Le supply sera remboursé.")) return;
+        const v = state.fleet.find(x => x.id === id);
+        if (v && v.count > 0) {
+            v.count--;
+            state.supply += v.cost; // Remboursement du supply
+            updateVehicleStatusLocally(v);
+            render();
+            syncVehicle(v);
+            saveAndSyncGlobals();
+            closeUnitModal();
+        }
+    };
 
-        return state.supply - cost;
+    function calculateRemainingSupply() {
+        return state.supply; // Le supply est maintenant géré comme un inventaire direct
     }
 
     function updateGlobalStats() {
         const remaining = calculateRemainingSupply();
         document.getElementById('stat-supply').innerText = remaining;
-        document.getElementById('stat-active').innerText = state.fleet.reduce((a, b) => a + (b.status === 'Opérationnel' ? b.count : 0), 0);
-        document.getElementById('stat-lost').innerText = state.history.filter(h => h.type === 'LOSS').reduce((a, b) => a + b.count, 0);
+        document.getElementById('stat-active').innerText = state.fleet.reduce((a, b) => a + (b.count || 0), 0);
+        document.getElementById('stat-lost').innerText = state.fleet.reduce((a, b) => a + (b.destroyed || 0), 0);
 
         // New stats: Personnel and Medics
         const personnelEl = document.getElementById('stat-personnel');
@@ -455,7 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Header background status
         const slStatus = document.getElementById('sl-status');
         if (state.isShiftActive) {
-            slStatus.innerText = `En Service (${state.slName})`;
+            slStatus.innerText = `En Service(${state.slName})`;
             slStatus.classList.remove('text-slate-500');
             slStatus.classList.add('text-green-500');
         } else {
@@ -490,6 +703,44 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.classList.remove('flex');
     };
 
+    window.showSuccessModal = (vehicleType, indicatif, isFinished) => {
+        const overlay = document.getElementById('modal-overlay');
+        const unitKey = state.editingUnitKey;
+        const m = unitKey ? state.movements[unitKey] : null;
+        const isHS = m && m.condition === 'HS';
+
+        const title = isHS ? "VÉHICULE DÉTRUIT" : (isFinished ? "MISSION TERMINÉE" : "MISSION ENREGISTRÉE");
+        const subtitle = isHS ? "L'UNITÉ A ÉTÉ RETIRÉE DU SERVICE" : (isFinished ? "L'UNITÉ EST DE RETOUR À LA BASE" : "LES DONNÉES SONT SYNCHRONISÉES");
+        const icon = isHS ? 'skull' : (isFinished ? 'home' : 'check-circle');
+        const color = isHS ? 'text-red-500' : (isFinished ? 'text-blue-500' : 'text-green-500');
+
+        showModal(`
+            <div class="p-8 text-center">
+                <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center ${color} mx-auto mb-6 border border-white/5 shadow-xl">
+                    <i data-lucide="${icon}" class="w-10 h-10"></i>
+                </div>
+                <h3 class="text-xl font-black text-white uppercase tracking-tighter mb-2">${title}</h3>
+                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-8 italic">${subtitle}</p>
+                
+                <div class="bg-slate-900/50 rounded-2xl p-4 border border-white/5 mb-8 space-y-3 text-left">
+                    <div>
+                        <span class="text-[8px] text-slate-500 uppercase font-black block tracking-widest">Unité Tactique</span>
+                        <span class="text-sm font-bold text-white">${indicatif}</span>
+                    </div>
+                    <div>
+                        <span class="text-[8px] text-slate-500 uppercase font-black block tracking-widest">Modèle de Véhicule</span>
+                        <span class="text-sm font-bold text-indigo-400">${vehicleType}</span>
+                    </div>
+                </div>
+
+                <button onclick="closeModal()" class="w-full py-4 bg-indigo-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-indigo-900/40 hover:bg-indigo-500 transition-all active:scale-95">
+                    Terminer
+                </button>
+            </div>
+        `);
+        lucide.createIcons();
+    }
+
     function showStartShiftModal() {
         showModal(`
             <div class="p-6">
@@ -513,7 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     Démarrer le service
                 </button>
             </div>
-        `);
+            `);
         lucide.createIcons();
     }
 
@@ -535,14 +786,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     </button>
                 </div>
             </div>
-        `);
+            `);
         lucide.createIcons();
     }
 
     window.confirmStartShift = () => {
         closeModal();
         const now = new Date();
-        const formattedTime = `${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')}`;
+        const formattedTime = `${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')} `;
 
         state.isShiftActive = true;
         state.startTime = now;
@@ -557,8 +808,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.confirmStopShift = () => {
         closeModal();
         const now = new Date();
-        const formattedTime = `${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')}`;
-        const startTimeStr = `${state.startTime.toLocaleDateString('fr-FR')} ${state.startTime.toLocaleTimeString('fr-FR')}`;
+        const formattedTime = `${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')} `;
+        const startTimeStr = `${state.startTime.toLocaleDateString('fr-FR')} ${state.startTime.toLocaleTimeString('fr-FR')} `;
 
         const totalDeployed = state.fleet.reduce((a, b) => a + b.count, 0);
         const totalDestroyed = state.history.filter(h => h.type === 'LOSS').reduce((a, b) => a + b.count, 0);
@@ -601,6 +852,69 @@ document.addEventListener('DOMContentLoaded', () => {
         syncGlobalSettings();
     }
 
+    window.openQuickEdit = (type) => {
+        let label = '';
+        let value = 0;
+        let colorClass = '';
+
+        if (type === 'supply') {
+            label = 'Supply Initial Base';
+            value = state.supply;
+            colorClass = 'text-blue-400';
+        } else if (type === 'personnel') {
+            label = 'Effectifs Logistique';
+            value = state.personnel;
+            colorClass = 'text-orange-500';
+        } else if (type === 'medics') {
+            label = 'Unités V2 / EVASAN';
+            value = state.medics;
+            colorClass = 'text-pink-500';
+        }
+
+        showModal(`
+            <div class="p-6">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center border border-white/5">
+                        <i data-lucide="edit-3" class="w-5 h-5 ${colorClass}"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-black uppercase tracking-tight text-white italic">Mise à jour Rapide</h3>
+                        <p class="text-[8px] text-slate-500 font-bold uppercase tracking-widest">${label}</p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900/50 rounded-2xl p-4 border border-white/5 mb-6">
+                    <input type="number" id="quick-edit-input" value="${value}" 
+                           class="bg-transparent text-2xl font-black text-center w-full outline-none ${colorClass} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="closeModal()" class="py-4 bg-slate-800 text-slate-400 font-black uppercase tracking-tighter rounded-xl hover:bg-slate-700 hover:text-white transition-all">
+                        Annuler
+                    </button>
+                    <button onclick="confirmQuickEdit('${type}')" class="py-4 bg-indigo-600 text-white font-black uppercase tracking-tighter rounded-xl shadow-lg shadow-indigo-900/40 hover:bg-indigo-500 transition-all active:scale-95">
+                        Valider
+                    </button>
+                </div>
+            </div>
+        `);
+        lucide.createIcons();
+        setTimeout(() => document.getElementById('quick-edit-input').select(), 100);
+    };
+
+    window.confirmQuickEdit = (type) => {
+        const input = document.getElementById('quick-edit-input');
+        const newValue = parseInt(input.value);
+        if (isNaN(newValue)) return;
+
+        if (type === 'supply') state.supply = newValue;
+        else if (type === 'personnel') state.personnel = newValue;
+        else if (type === 'medics') state.medics = newValue;
+
+        closeModal();
+        saveAndSyncGlobals();
+    };
+
     window.adjustSupplyLimit = (val) => {
         state.supply += val;
         saveAndSyncGlobals();
@@ -614,7 +928,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- SYNC ENGINE ---
     function syncGlobalSettings() {
-        console.log(`[SYNC] Globals: Personnel: ${state.personnel}, Medics: ${state.medics}, Supply: ${state.supply}`);
+        console.log(`[SYNC] Globals: Personnel: ${state.personnel}, Medics: ${state.medics}, Supply: ${state.supply} `);
         fetch(API_URL, {
             method: 'POST',
             mode: 'no-cors',
@@ -630,7 +944,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }).catch(err => console.error("Global Sync Error", err));
     }
     function syncVehicle(v) {
-        console.log(`[SYNC] ${v.type} | Despl: ${v.count}, Miss: ${v.inMission}`);
+        console.log(`[SYNC] ${v.type} | Depl: ${v.count}, Miss: ${v.inMission} `);
         fetch(API_URL, {
             method: 'POST',
             mode: 'no-cors',
@@ -649,7 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function syncShiftAction(action, data) {
-        console.log(`[SHIFT] ${action}`, data);
+        console.log(`[SHIFT] ${action} `, data);
         fetch(API_URL, {
             method: 'POST',
             mode: 'no-cors',
@@ -670,11 +984,133 @@ document.addEventListener('DOMContentLoaded', () => {
                 const h = Math.floor(diff / 3600000).toString().padStart(2, '0');
                 const m = Math.floor((diff % 3600000) / 60000).toString().padStart(2, '0');
                 const s = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
-                timerEl.innerText = `${h}:${m}:${s}`;
+                timerEl.innerText = `${h}:${m}:${s} `;
             } else if (timerEl) {
                 timerEl.innerText = "00:00:00";
             }
         }, 1000);
+    }
+
+    function renderUnitModal(container) {
+        const unitKey = state.editingUnitKey;
+        if (!unitKey) return;
+
+        const vid = parseInt(unitKey.split('_')[0]);
+        const index = parseInt(unitKey.split('_')[1]);
+        const v = state.fleet.find(x => x.id === vid);
+        if (!v) return;
+
+        if (!state.movements[unitKey]) {
+            state.movements[unitKey] = {
+                indicatif: `${v.type.split(' ')[0]}-${index + 1}`,
+                crew: v.crew || '', // Par défaut l'équipage du véhicule
+                mission: '',
+                status: 'En cours',
+                condition: 'Opérationnel',
+                remark: ''
+            };
+        }
+        const m = state.movements[unitKey];
+
+        const modalHtml = `
+            <div class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                <div class="absolute inset-0 bg-slate-950/90 backdrop-blur-sm" onclick="closeUnitModal()"></div>
+                
+                <div class="relative w-full max-w-lg bg-slate-900 border-t sm:border border-white/10 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-slide-up">
+                    <div class="h-1.5 w-12 bg-white/10 rounded-full mx-auto mt-3 mb-1 sm:hidden"></div>
+                    
+                    <div class="p-6">
+                        <div class="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 class="text-xl font-black text-white uppercase tracking-tighter">${v.type}</h3>
+                                <span class="text-[9px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full font-black uppercase tracking-widest border border-indigo-500/20">UNITÉ V.${index + 1}</span>
+                            </div>
+                            <button onclick="closeUnitModal()" class="bg-slate-800 p-2 rounded-xl text-slate-500">
+                                <i data-lucide="x" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="bg-slate-800/50 rounded-2xl p-3 border border-white/5">
+                                    <label class="text-[8px] text-slate-500 uppercase font-black block mb-1 tracking-widest">Indicatif</label>
+                                    <input type="text" value="${m.indicatif}" 
+                                           oninput="updateMovementField('${unitKey}', 'indicatif', this.value)"
+                                           class="bg-transparent text-sm text-white w-full outline-none font-bold">
+                                </div>
+                                <div class="bg-slate-800/50 rounded-2xl p-3 border border-white/5">
+                                    <label class="text-[8px] text-slate-500 uppercase font-black block mb-1 tracking-widest">Équipier</label>
+                                    <input type="text" value="${m.crew || ''}" 
+                                           oninput="updateMovementField('${unitKey}', 'crew', this.value)"
+                                           class="bg-transparent text-sm text-blue-400 w-full outline-none font-bold">
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-800/50 rounded-2xl p-3 border border-white/5">
+                                <label class="text-[8px] text-slate-500 uppercase font-black block mb-1 tracking-widest">Mission / Secteur</label>
+                                <input type="text" value="${m.mission}" placeholder="Décrivez la mission..."
+                                       oninput="updateMovementField('${unitKey}', 'mission', this.value)"
+                                       class="bg-transparent text-sm text-white w-full outline-none font-bold">
+                            </div>
+
+                            <div>
+                                <label class="text-[8px] text-slate-500 uppercase font-black block mb-2 tracking-widest">État du Matériel</label>
+                                <div class="grid grid-cols-3 gap-2">
+                                    ${['Opérationnel', 'En Réparation', 'HS'].map(c => `
+                                        <button onclick="updateMovementField('${unitKey}', 'condition', '${c}'); render();" 
+                                                class="py-3 rounded-xl text-[9px] font-black uppercase border transition-all ${m.condition === c ? (c === 'HS' ? 'bg-red-600 border-red-400 text-white' : 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-900/40') : 'bg-slate-800 border-white/5 text-slate-500'}">
+                                            ${c === 'Opérationnel' ? 'OPR' : c === 'En Réparation' ? 'RÉPA' : 'HS'}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-800/50 rounded-2xl p-3 border border-white/5">
+                                <label class="text-[8px] text-slate-500 uppercase font-black block mb-1 tracking-widest">Observations / Remarques</label>
+                                <textarea oninput="updateMovementField('${unitKey}', 'remark', this.value)"
+                                          placeholder="Précisez l'état ou les détails de la mission..."
+                                          class="bg-transparent text-sm text-white w-full outline-none font-bold min-h-[60px] resize-none">${m.remark || ''}</textarea>
+                            </div>
+
+                            <div>
+                                <label class="text-[8px] text-slate-500 uppercase font-black block mb-2 tracking-widest">Statut Mission</label>
+                                <div class="grid grid-cols-3 gap-2">
+                                    ${['En cours', 'Terminé', 'Échec'].map(s => `
+                                        <button onclick="updateMovementField('${unitKey}', 'status', '${s}'); render();" 
+                                                class="py-3 rounded-xl text-[9px] font-black uppercase border transition-all ${m.status === s ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-900/40' : 'bg-slate-800 border-white/5 text-slate-500'}">
+                                            ${s}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <div class="pt-4 flex gap-3">
+                                <button onclick="syncMovement('${unitKey}'); closeUnitModal();"
+                                        class="flex-1 py-4 bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-indigo-900/40 active:scale-95 transition-all">
+                                    ${m.mission ? 'VALIDATION' : 'DÉPART MISSION'}
+                                </button>
+                                <button onclick="reportLoss(${v.id}); closeUnitModal();" 
+                                        title="Détruire le véhicule (HS)"
+                                        class="px-5 py-4 bg-red-600/10 text-red-500 rounded-2xl border border-red-500/10 active:scale-95 transition-all">
+                                    <i data-lucide="skull" class="w-5 h-5"></i>
+                                </button>
+                                <button onclick="cancelDeployment(${v.id});" 
+                                        title="Annuler le déploiement (Rembourser Supply)"
+                                        class="px-5 py-4 bg-slate-800 text-slate-400 rounded-2xl border border-white/5 active:scale-95 transition-all hover:bg-slate-700 hover:text-white">
+                                    <i data-lucide="trash-2" class="w-5 h-5"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const modalDiv = document.createElement('div');
+        modalDiv.id = 'unit-modal-layer';
+        modalDiv.innerHTML = modalHtml;
+        container.appendChild(modalDiv);
+        lucide.createIcons();
     }
 
     // --- INIT ---

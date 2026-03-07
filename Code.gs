@@ -1,86 +1,139 @@
+/**
+ * CONFIGURATION DES ONGLETS
+ * Assure-toi que les noms correspondent exactement à ceux de ton Google Sheet.
+ */
+const SHEETS = {
+  DASHBOARD: 'Tableau de Bord',
+  EQUIPAGES: 'Équipages',
+  HISTORY: 'Historique SL Logi',
+  BASE: 'Base SL Logi'
+};
+
+/**
+ * Récupère les mouvements actifs (En cours)
+ */
+function getActiveMovements(ss) {
+  const logSheet = ss.getSheetByName(SHEETS.EQUIPAGES);
+  if (!logSheet) return {};
+
+  const lastRow = logSheet.getLastRow();
+  if (lastRow < 2) return {};
+
+  const values = logSheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  const movements = {};
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+    const status = String(row[5]);
+    const indicatif = String(row[2]);
+    const vehicleType = String(row[1]);
+
+    if (status === 'En cours' && indicatif) {
+      if (!movements[indicatif]) {
+        movements[indicatif] = {
+          vehicleType: vehicleType,
+          indicatif: indicatif,
+          crew: String(row[3]),
+          mission: String(row[4]),
+          status: status,
+          condition: String(row[6])
+        };
+      }
+    }
+  }
+  return movements;
+}
+
+/**
+ * Point d'entrée pour les requêtes GET (Lecture des données)
+ */
 function doGet(e) {
   return handleRequest('GET', e);
 }
 
+/**
+ * Point d'entrée pour les requêtes POST (Écriture des données)
+ */
 function doPost(e) {
   return handleRequest('POST', e);
 }
 
+/**
+ * Gestionnaire principal des requêtes
+ */
 function handleRequest(method, e) {
-  // Plus besoin de l'ID si le script est rattaché au tableau (Extensions > Apps Script depuis le tableau)
-  // Nom de l'onglet précis où se trouve ton tableau (ex: "Tableau de Bord")
-  const SHEET_NAME = 'Tableau de Bord'; 
-  
-  // Headers CORS pour permettre à l'application web (n'importe où) de communiquer
-  const output = ContentService.createTextOutput();
-  output.setMimeType(ContentService.MimeType.JSON);
+  const output = ContentService.createTextOutput().setMimeType(ContentService.MimeType.JSON);
   
   try {
-    const spreadSheet = SpreadsheetApp.getActiveSpreadsheet();
-    if (!spreadSheet) {
-      throw new Error("Impossible de lier le tableau. Le script est-il bien créé depuis la feuille de calcul ?");
-    }
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const dashSheet = ss.getSheetByName(SHEETS.DASHBOARD);
     
-    const sheet = spreadSheet.getSheetByName(SHEET_NAME);
-    if (!sheet) {
-      throw new Error("Onglet '" + SHEET_NAME + "' introuvable. Vérifie le nom en bas de la feuille Google Sheet.");
-    }
+    if (!dashSheet) throw new Error("L'onglet '" + SHEETS.DASHBOARD + "' est introuvable.");
+
+    let payload = {};
 
     if (method === 'GET') {
-      // GET : Récupérer toutes les données 
-      const vehicles = getVehiclesData(sheet);
-      const globals = getGlobalSettings(sheet);
+      const vehicles = getVehiclesData(dashSheet);
+      const globals = getGlobalSettings(dashSheet);
+      const movements = getActiveMovements(ss);
+      
       return output.setContent(JSON.stringify({
         status: 'success',
         data: vehicles,
-        globals: globals
+        globals: globals,
+        movements: movements
       }));
       
     } else if (method === 'POST') {
-      // POST : Mettre à jour une ou plusieurs lignes
-      // Le payload doit être envoyé en string JSON : { action: "update", vehicle: { id: 2, deployed: 1, status: "Opérationnel", ...} }
-      
-      let payload;
-      if (e.postData && e.postData.contents) {
-         payload = JSON.parse(e.postData.contents);
-      } else {
-         payload = JSON.parse(e.parameter.data); // Fallback depending on how fetch is made
+      if (!e) throw new Error("Aucun paramètre reçu. Ne pas exécuter manuellement depuis l'éditeur.");
+
+      try {
+        if (e.postData && e.postData.contents) {
+          payload = JSON.parse(e.postData.contents);
+        } else if (e.parameter && e.parameter.data) {
+          payload = JSON.parse(e.parameter.data);
+        } else {
+          payload = e.parameter || {};
+        }
+      } catch (err) {
+        throw new Error("Format JSON invalide : " + err.toString());
       }
       
-      if (payload.action === 'update' && payload.vehicle) {
-        const result = updateVehicleRow(sheet, payload.vehicle);
-        return output.setContent(JSON.stringify({
-          status: 'success',
-          message: 'Véhicule mis à jour',
-          updated_row: result
-        }));
-      } else if (payload.action === 'shift_start') {
-        const result = startShift(spreadSheet, payload.data);
-        return output.setContent(JSON.stringify({
-          status: 'success',
-          message: 'Service demarré',
-          data: result
-        }));
-      } else if (payload.action === 'shift_stop') {
-        const result = stopShift(spreadSheet, payload.data);
-        return output.setContent(JSON.stringify({
-          status: 'success',
-          message: 'Service terminé',
-          data: result
-        }));
-      } else if (payload.action === 'sync_globals') {
-        const result = updateGlobalSettings(sheet, payload.data);
-        return output.setContent(JSON.stringify({
-          status: 'success',
-          message: 'Parametres globaux mis a jour',
-          data: result
-        }));
-      } else {
-         throw new Error("Action ou donnees manquantes dans le POST.");
+      let result;
+
+      switch (payload.action) {
+        case 'update':
+          if (!payload.vehicle) throw new Error("Données véhicule manquantes.");
+          result = updateVehicleRow(dashSheet, payload.vehicle);
+          return output.setContent(JSON.stringify({ status: 'success', message: 'Tableau mis à jour', row: result }));
+
+        case 'log_equipage':
+          if (!payload.data) throw new Error("Données de mouvement manquantes.");
+          result = logMovement(ss, payload.data);
+          return output.setContent(JSON.stringify({ status: 'success', message: 'Mouvement enregistré', data: result }));
+
+        case 'shift_start':
+          if (!payload.data) throw new Error("Données de session manquantes.");
+          result = startShift(ss, payload.data);
+          return output.setContent(JSON.stringify({ status: 'success', message: 'Service démarré', data: result }));
+
+        case 'shift_stop':
+          if (!payload.data) throw new Error("Données de session manquantes.");
+          result = stopShift(ss, payload.data);
+          return output.setContent(JSON.stringify({ status: 'success', message: 'Service terminé', data: result }));
+
+        case 'sync_globals':
+          const dataToSync = payload.data || payload;
+          result = updateGlobalSettings(dashSheet, dataToSync);
+          return output.setContent(JSON.stringify({ status: 'success', message: 'Paramètres mis à jour', data: result }));
+
+        default:
+          throw new Error("Action '" + (payload.action || "inconnue") + "' non reconnue.");
       }
     }
 
   } catch (error) {
+    console.error("Erreur serveur : " + error.toString());
     return output.setContent(JSON.stringify({
       status: 'error',
       message: error.toString()
@@ -88,113 +141,99 @@ function handleRequest(method, e) {
   }
 }
 
-// --- Fonctions d'extraction et de manipulation métier ---
-
+/**
+ * Récupère les données des véhicules (Grille à partir de la ligne 9)
+ */
 function getVehiclesData(sheet) {
-  // ADAPTER LES PLAGES EN FONCTION DE LA VRAIE STRUCTURE DU SHEET
-  // On suppose que la ligne 7 contient les entêtes et les données commencent ligne 8
-  const startRow = 8;
+  const startRow = 9; 
   const lastRow = sheet.getLastRow();
+  if (lastRow < startRow) return [];
   
-  // Si le tableau s'arrête avant la fin de la feuille, ou pour éviter les lignes vides :
-  if(lastRow < startRow) return [];
+  const values = sheet.getRange(startRow, 1, lastRow - startRow + 1, 13).getValues();
   
-  const numRows = lastRow - startRow + 1;
-  // A to K (colonnes 1 à 11) - Adapter selon la capture
-  const numColumns = 11; 
-  
-  const range = sheet.getRange(startRow, 1, numRows, numColumns);
-  const values = range.getValues();
-  
-  let vehicles = [];
-  
-  // Indexation des colonnes (Structure mise à jour avec "En Mission" en Col E)
-  // 0: Grade, 1: Categorie, 2: Type, 3: Deployés (D), 4: En Mission (E), 5: Date (F), 6: Cout (G), 7: Statut (H), 8: Detruits (I), 9: Equipage (J), 10: Event (K), 11: Remarques (L)
-  for (let i = 0; i < values.length; i++) {
-    const row = values[i];
-    const categoryName = String(row[1]).trim();
-    const vehicleName = String(row[2]).trim();
-    
-    // Ignorer les lignes totalement vides ou les séparateurs
-    if (!categoryName && !vehicleName) continue;
-    
-    vehicles.push({
-      id: startRow + i, // L'ID est la ligne physique dans le tableur (pratique pour l'update)
-      grade: row[0],
-      category: categoryName,
-      name: vehicleName,
-      deployed: Number(row[3]) || 0,
-      inMission: Number(row[4]) || 0,
-      cost: Number(row[6]) || 0,
-      status: String(row[7]) || "En Base",
-      destroyed: Number(row[8]) || 0,
-      crew: String(row[9] || ""),
-      note: String(row[11] || "")
-    });
-  }
-  
-  return vehicles;
+  return values.filter(row => row[1] || row[2]).map((row, index) => ({
+    id: startRow + index,
+    grade: row[0],
+    category: row[1],
+    name: row[2],
+    deployed: Number(row[3]) || 0,
+    inMission: Number(row[4]) || 0,
+    cost: Number(row[6]) || 0,
+    status: String(row[7]),
+    destroyed: Number(row[8]) || 0,
+    crew: String(row[9] || ""),
+    note: String(row[12] || "")
+  }));
 }
 
-function updateVehicleRow(sheet, vehicleData) {
-  const rowIndex = vehicleData.id;
-  Logger.log("Updating row " + rowIndex + " with status: " + vehicleData.status);
-  console.log("Updating row " + rowIndex + " with status: " + vehicleData.status);
+/**
+ * Met à jour une ligne de véhicule
+ */
+function updateVehicleRow(sheet, v) {
+  const rowIndex = v.id;
+  if (!rowIndex || rowIndex < 8) throw new Error("ID de ligne invalide.");
+
+  sheet.getRange(rowIndex, 4).setValue(v.deployed);
+  sheet.getRange(rowIndex, 5).setValue(v.inMission);
   
-  if(!rowIndex || rowIndex < 8) {
-    throw new Error("ID (ligne) de véhicule invalide.");
-  }
-  
-  // 1. Colonne 4 : Déployés (Total dispos)
-  sheet.getRange(rowIndex, 4).setValue(vehicleData.deployed);
-  
-  // 2. Colonne 5 : En Mission (NOUVEAU)
-  const inMission = Number(vehicleData.inMission) || 0;
-  sheet.getRange(rowIndex, 5).setValue(inMission);
-  
-  // 3. LOGIQUE AUTOMATIQUE DU STATUT (Colonne 8 : Statut)
   let status = "En Base";
-  const total = Number(vehicleData.deployed) || 0;
-  
-  if (total === 0) {
+  if (Number(v.deployed) === 0) {
     status = "Pas déployé";
-  } else if (inMission > 0) {
+  } else if (Number(v.inMission) > 0) {
     status = "Opérationnel";
-  } else {
-    status = "En Base";
   }
   sheet.getRange(rowIndex, 8).setValue(status);
-  
-  // 4. Colonne 10 : Équipage
-  sheet.getRange(rowIndex, 10).setValue(vehicleData.crew);
-  
-  // 5. Colonne 9 : Détruit
-  if(vehicleData.destroyed !== undefined) {
-      sheet.getRange(rowIndex, 9).setValue(vehicleData.destroyed);
-  }
-  
-  Logger.log("Row " + rowIndex + " updated. Status: " + status + ", Mission: " + inMission);
+
+  if (v.destroyed !== undefined) sheet.getRange(rowIndex, 9).setValue(v.destroyed);
+  if (v.crew !== undefined) sheet.getRange(rowIndex, 10).setValue(v.crew);
+
   return rowIndex;
 }
 
+/**
+ * LOG des mouvements détaillé dans l'onglet Équipages
+ */
+function logMovement(ss, data) {
+  let logSheet = ss.getSheetByName(SHEETS.EQUIPAGES);
+  if (!logSheet) {
+    logSheet = ss.insertSheet(SHEETS.EQUIPAGES);
+    logSheet.appendRow(["Horodatage", "Type Véhicule", "ID/Indicatif", "Équipage", "Mission", "Statut Mission", "État Matériel", "Remarques"]);
+    logSheet.getRange(1, 1, 1, 8).setFontWeight("bold").setBackground("#f3f3f3");
+  }
+
+  logSheet.appendRow([
+    new Date(),
+    data.vehicleType || "Inconnu",
+    data.idIndicatif || "-",
+    data.crew || "Non assigné",
+    data.mission || "N/A",
+    data.status || "En cours",
+    data.condition || "Opérationnel",
+    data.remark || ""
+  ]);
+
+  return data;
+}
+
+/**
+ * Démarre le service (DASHBOARD H4, I4 et Incrément base)
+ */
 function startShift(ss, data) {
-  const dashSheet = ss.getSheetByName('Tableau de Bord');
-  const baseSheet = ss.getSheetByName('Base SL Logi');
+  const dash = ss.getSheetByName(SHEETS.DASHBOARD);
+  const base = ss.getSheetByName(SHEETS.BASE);
   
-  // 1. Update Dashboard (G4: pseudo, H4: start time)
-  if (dashSheet) {
-    dashSheet.getRange(4, 7).setValue(data.pseudo);
-    dashSheet.getRange(4, 8).setValue(data.startTime);
-    dashSheet.getRange(4, 9).setValue(""); // Clear end time
+  if (dash) {
+    dash.getRange(4, 8).setValue(data.pseudo); 
+    dash.getRange(4, 9).setValue(data.startTime); 
+    dash.getRange(4, 10).setValue(""); 
   }
   
-  // 2. Increment Base count
-  if (baseSheet && data.pseudo) {
-    const values = baseSheet.getDataRange().getValues();
+  if (base && data.pseudo) {
+    const values = base.getDataRange().getValues();
     for (let i = 1; i < values.length; i++) {
-      if (String(values[i][0]).toLowerCase() === data.pseudo.toLowerCase()) {
-        const currentVal = Number(values[i][1]) || 0;
-        baseSheet.getRange(i + 1, 2).setValue(currentVal + 1);
+        if (values[i][0] && String(values[i][0]).toLowerCase() === data.pseudo.toLowerCase()) {
+        const count = Number(values[i][1]) || 0;
+        base.getRange(i + 1, 2).setValue(count + 1);
         break;
       }
     }
@@ -202,20 +241,20 @@ function startShift(ss, data) {
   return data;
 }
 
+/**
+ * Termine le service (DASHBOARD J4, K4 et Historique)
+ */
 function stopShift(ss, data) {
-  const dashSheet = ss.getSheetByName('Tableau de Bord');
-  const histSheet = ss.getSheetByName('Historique SL Logi');
+  const dash = ss.getSheetByName(SHEETS.DASHBOARD);
+  const hist = ss.getSheetByName(SHEETS.HISTORY);
   
-  // 1. Update Dashboard (G4: "OFF", I4: end time)
-  if (dashSheet) {
-    dashSheet.getRange(4, 7).setValue("OFF"); // User requested "OFF"
-    dashSheet.getRange(4, 9).setValue(data.endTime);
+  if (dash) {
+    dash.getRange(4, 8).setValue("OFF");
+    dash.getRange(4, 10).setValue(data.endTime);
   }
   
-  // 2. Append to History
-  // A: Pseudo, B: Start, C: End, D: Deployed, E: Destroyed, F: Effectif
-  if (histSheet) {
-    histSheet.appendRow([
+  if (hist) {
+    hist.appendRow([
       data.pseudo,
       data.startTime,
       data.endTime,
@@ -227,28 +266,30 @@ function stopShift(ss, data) {
   return data;
 }
 
+/**
+ * Lecture des paramètres globaux (Colonne K)
+ */
 function getGlobalSettings(sheet) {
-  // J6: Supply, J5: Personnel, J7: Medics, G4: SL Name
   return {
-    supply: Number(sheet.getRange(6, 10).getValue()) || 12000,
-    personnel: Number(sheet.getRange(5, 10).getValue()) || 0,
-    medics: Number(sheet.getRange(7, 10).getValue()) || 0,
-    slName: String(sheet.getRange(4, 7).getValue()) || "Non identifié"
+    supply: Number(sheet.getRange(6, 11).getValue()),    // K6
+    personnel: Number(sheet.getRange(5, 11).getValue()), // K5
+    medics: Number(sheet.getRange(7, 11).getValue()),    // K7
+    slName: String(sheet.getRange(4, 8).getValue())      // H4
   };
 }
 
+/**
+ * Écriture des paramètres globaux (Colonne K)
+ */
 function updateGlobalSettings(sheet, data) {
-  // J6: Supply de base, J5: Personnel, J7: Medics
-  if (data.supply !== undefined) sheet.getRange(6, 10).setValue(data.supply);
-  if (data.personnel !== undefined) sheet.getRange(5, 10).setValue(data.personnel);
-  if (data.medics !== undefined) sheet.getRange(7, 10).setValue(data.medics);
-  return data;
-}
+  if (!data || typeof data !== 'object' || data === null) {
+    console.error("Erreur critique : data est invalide dans updateGlobalSettings", data);
+    return null;
+  }
 
-// Fonction de test depuis l'éditeur App Script
-function testGet() {
-  const SPREADSHEET_ID = 'A_REMPLACER'; 
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getActiveSheet();
-  const res = getVehiclesData(sheet);
-  Logger.log(JSON.stringify(res, null, 2));
+  if (data.supply !== undefined && data.supply !== null) sheet.getRange(6, 11).setValue(data.supply);
+  if (data.personnel !== undefined && data.personnel !== null) sheet.getRange(5, 11).setValue(data.personnel);
+  if (data.medics !== undefined && data.medics !== null) sheet.getRange(7, 11).setValue(data.medics);
+  
+  return data;
 }

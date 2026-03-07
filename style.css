@@ -65,6 +65,21 @@ body {
 .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+    overscroll-behavior-y: contain;
+}
+
+@keyframes slide-up {
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
+}
+
+.animate-slide-up {
+    animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Status Pills */
@@ -213,4 +228,18 @@ body {
 
 .mili-shadow {
     box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+}
+
+.spin {
+    animation: rotate 1.2s linear infinite;
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
