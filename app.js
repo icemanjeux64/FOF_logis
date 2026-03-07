@@ -262,7 +262,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <span class="px-1.5 py-0.5 bg-slate-800 text-[8px] font-black rounded text-slate-400 uppercase mb-1 inline-block">${v.grade}</span>
                                 <h3 class="font-bold text-sm leading-tight group-hover:text-blue-400 transition-colors">${v.type}</h3>
                             </div>
-                            <span class="mono text-xs font-bold text-slate-500">${v.cost} pts</span>
+                            <div class="flex flex-col items-end">
+                                <span class="mono text-xs font-bold text-slate-500">${v.cost} pts</span>
+                                ${v.count > 0 ? `<span class="mt-1 text-[9px] font-black text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20 animate-pulse-slow">x${v.count}</span>` : ''}
+                            </div>
                         </div>
                         
                         <div class="mt-6 flex items-center justify-between">
@@ -669,11 +672,22 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('stat-active').innerText = state.fleet.reduce((a, b) => a + (b.count || 0), 0);
         document.getElementById('stat-lost').innerText = state.fleet.reduce((a, b) => a + (b.destroyed || 0), 0);
 
-        // New stats: Personnel and Medics
+        // Dynamic Medic calculation from EVASAN units
+        const evasanCount = state.fleet.reduce((total, v) => {
+            if (v.type.toUpperCase().includes('EVASAN') || v.type.toUpperCase().includes('AMBULANCE')) {
+                return total + (v.count || 0);
+            }
+            return total;
+        }, 0);
+
+        // Update display
         const personnelEl = document.getElementById('stat-personnel');
         const medicsEl = document.getElementById('stat-medics');
+        const evasanEl = document.getElementById('stat-evasan');
+
         if (personnelEl) personnelEl.innerText = state.personnel;
         if (medicsEl) medicsEl.innerText = state.medics;
+        if (evasanEl) evasanEl.innerText = evasanCount;
 
         // Header background status
         const slStatus = document.getElementById('sl-status');
