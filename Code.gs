@@ -108,8 +108,8 @@ function getVehiclesData(sheet) {
   
   let vehicles = [];
   
-  // Indexation des colonnes (A adapter selon ton Google Sheet précis)
-  // 0: Grade, 1: Categorie, 2: Type, 3: Deployés, 4: Date, 5: Cout, 6: Statut, 7: Detruits, 8: Equipage, 9: Event, 10: Remarques
+  // Indexation des colonnes (Structure mise à jour avec "En Mission" en Col E)
+  // 0: Grade, 1: Categorie, 2: Type, 3: Deployés (D), 4: En Mission (E), 5: Date (F), 6: Cout (G), 7: Statut (H), 8: Detruits (I), 9: Equipage (J), 10: Event (K), 11: Remarques (L)
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
     const categoryName = String(row[1]).trim();
@@ -124,11 +124,12 @@ function getVehiclesData(sheet) {
       category: categoryName,
       name: vehicleName,
       deployed: Number(row[3]) || 0,
-      cost: Number(row[5]) || 0,
-      status: String(row[6]) || "Pas déployé",
-      destroyed: Number(row[7]) || 0,
-      crew: String(row[8] || ""),
-      note: String(row[10] || "")
+      inMission: Number(row[4]) || 0,
+      cost: Number(row[6]) || 0,
+      status: String(row[7]) || "En Base",
+      destroyed: Number(row[8]) || 0,
+      crew: String(row[9] || ""),
+      note: String(row[11] || "")
     });
   }
   
@@ -136,28 +137,43 @@ function getVehiclesData(sheet) {
 }
 
 function updateVehicleRow(sheet, vehicleData) {
-  // L'ID du véhicule correspond à sa ligne physique dans le tableau
   const rowIndex = vehicleData.id;
+  Logger.log("Updating row " + rowIndex + " with status: " + vehicleData.status);
+  console.log("Updating row " + rowIndex + " with status: " + vehicleData.status);
   
   if(!rowIndex || rowIndex < 8) {
     throw new Error("ID (ligne) de véhicule invalide.");
   }
   
-  // Attention à la position des colonnes (Base 1 pour getRange)
-  // Colonne 4 : Déployés
+  // 1. Colonne 4 : Déployés (Total dispos)
   sheet.getRange(rowIndex, 4).setValue(vehicleData.deployed);
   
-  // Colonne 7 : Statut
-  sheet.getRange(rowIndex, 7).setValue(vehicleData.status);
+  // 2. Colonne 5 : En Mission (NOUVEAU)
+  const inMission = Number(vehicleData.inMission) || 0;
+  sheet.getRange(rowIndex, 5).setValue(inMission);
   
-  // Colonne 9 : Équipage
-  sheet.getRange(rowIndex, 9).setValue(vehicleData.crew);
+  // 3. LOGIQUE AUTOMATIQUE DU STATUT (Colonne 8 : Statut)
+  let status = "En Base";
+  const total = Number(vehicleData.deployed) || 0;
   
-  // (Optionnel) Colonne 8 : Détruit
+  if (total === 0) {
+    status = "Pas déployé";
+  } else if (inMission > 0) {
+    status = "Opérationnel";
+  } else {
+    status = "En Base";
+  }
+  sheet.getRange(rowIndex, 8).setValue(status);
+  
+  // 4. Colonne 10 : Équipage
+  sheet.getRange(rowIndex, 10).setValue(vehicleData.crew);
+  
+  // 5. Colonne 9 : Détruit
   if(vehicleData.destroyed !== undefined) {
-      sheet.getRange(rowIndex, 8).setValue(vehicleData.destroyed);
+      sheet.getRange(rowIndex, 9).setValue(vehicleData.destroyed);
   }
   
+  Logger.log("Row " + rowIndex + " updated. Status: " + status + ", Mission: " + inMission);
   return rowIndex;
 }
 

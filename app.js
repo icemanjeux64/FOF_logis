@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Filter and map backend data to local state format
                 // Assuming backend columns: id, category, name, cost, grade, deployed, crew, status, note
                 state.fleet = result.data
-                    .filter(v => v.id > 8 && v.name !== "Type de véhicule")
+                    .filter(v => v.id >= 8 && v.name !== "Type de véhicule")
                     .map(v => ({
                         id: v.id,
                         grade: v.grade || '2CL',
@@ -70,7 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         type: v.name,
                         cost: parseInt(v.cost) || 0,
                         count: parseInt(v.deployed) || 0,
-                        status: v.status || 'Opérationnel',
+                        inMission: parseInt(v.inMission) || 0,
+                        status: v.status || 'En Base',
                         crew: v.crew || v.note || '',
                         color: getCategoryColor(v.category)
                     }));
@@ -188,16 +189,27 @@ document.addEventListener('DOMContentLoaded', () => {
                             <span class="mono text-xs font-bold text-slate-500">${v.cost} pts</span>
                         </div>
                         
-                        <div class="mt-4 flex items-center justify-between">
+                        <div class="mt-4 flex flex-col gap-2">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[9px] text-slate-500 uppercase font-black tracking-widest">Total dispos</span>
                             <div class="flex items-center gap-3">
-                                <button onclick="changeCount(${v.id}, -1)" class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center font-bold text-slate-400">-</button>
-                                <span class="mono text-lg font-bold w-6 text-center">${v.count}</span>
-                                <button onclick="changeCount(${v.id}, 1)" class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center font-bold text-blue-500">+</button>
+                                <button onclick="changeCount(${v.id}, -1)" class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center font-bold text-slate-400">-</button>
+                                <span class="mono text-sm font-bold w-4 text-center text-white">${v.count}</span>
+                                <button onclick="changeCount(${v.id}, 1)" class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center font-bold text-blue-500">+</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[9px] text-slate-500 uppercase font-black tracking-widest">Sur le terrain</span>
+                            <div class="flex items-center gap-3">
+                                <button onclick="changeMissionCount(${v.id}, -1)" class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center font-bold text-slate-400">-</button>
+                                <span class="mono text-sm font-bold w-4 text-center ${v.inMission > 0 ? 'text-green-500' : 'text-slate-500'}">${v.inMission}</span>
+                                <button onclick="changeMissionCount(${v.id}, 1)" class="w-7 h-7 rounded bg-slate-800 flex items-center justify-center font-bold text-green-500">+</button>
                             </div>
                         </div>
                     </div>
                 </div>
-            `;
+            </div>
+        `;
         });
 
         html += `</div>`;
@@ -222,13 +234,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="bg-slate-800 border border-white/5 rounded-xl p-4">
                         <div class="flex justify-between items-center mb-3">
                             <h4 class="font-bold text-sm text-white">${v.type} <span class="text-blue-500 text-xs">(x${v.count})</span></h4>
-                            <div class="flex gap-1.5">
+                            <div class="flex gap-2 items-center bg-slate-900 border border-white/5 px-2 py-1 rounded-lg">
+                            <span class="text-[8px] text-slate-500 font-black uppercase tracking-widest mr-1">Tern</span>
+                            <button onclick="changeMissionCount(${v.id}, -1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500">-</button>
+                            <span class="mono text-[10px] font-bold w-4 text-center text-green-500">${v.inMission}</span>
+                            <button onclick="changeMissionCount(${v.id}, 1)" class="w-6 h-6 rounded bg-slate-800 flex items-center justify-center text-xs font-bold text-green-500">+</button>
+                            <span class="text-[10px] text-slate-600 font-bold ml-1">/ ${v.count}</span>
+                        </div>
+                        </div>
+                        <div class="flex gap-1.5 mb-3">
                                 <button onclick="updateStatus(${v.id}, 'Opérationnel')" 
                                         class="px-2 py-1 rounded text-[9px] font-black uppercase tracking-tighter border transition-all ${v.status === 'Opérationnel' ? 'bg-green-500/20 border-green-500 text-green-500' : 'bg-slate-900 border-white/5 text-slate-500'}">
                                     OPR
                                 </button>
-                                <button onclick="updateStatus(${v.id}, 'Pas déployé')" 
-                                        class="px-2 py-1 rounded text-[9px] font-black uppercase tracking-tighter border transition-all ${v.status === 'Pas déployé' ? 'bg-blue-500/20 border-blue-500 text-blue-500' : 'bg-slate-900 border-white/5 text-slate-500'}">
+                                <button onclick="updateStatus(${v.id}, 'En Base')" 
+                                        class="px-2 py-1 rounded text-[9px] font-black uppercase tracking-tighter border transition-all ${v.status === 'En Base' ? 'bg-blue-500/20 border-blue-500 text-blue-500' : 'bg-slate-900 border-white/5 text-slate-500'}">
                                     BASE
                                 </button>
                                 <button onclick="updateStatus(${v.id}, 'Détruit')" 
@@ -236,7 +256,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                     OUT
                                 </button>
                             </div>
-                        </div>
                         <div class="flex items-center gap-2">
                             <div class="flex-1 bg-slate-900 rounded p-2 flex items-center gap-2">
                                 <i data-lucide="user" class="w-3 h-3 text-slate-500"></i>
@@ -334,10 +353,36 @@ document.addEventListener('DOMContentLoaded', () => {
         v.count += delta;
         if (v.count > 0 && v.status === 'Pas déployé') v.status = 'Opérationnel';
         if (v.count === 0 && v.status === 'Opérationnel') v.status = 'Pas déployé';
+        if (v) {
+            v.count = Math.max(0, v.count + delta);
+            // Limit inMission by new count
+            if (v.inMission > v.count) v.inMission = v.count;
 
-        render();
-        syncVehicle(v);
+            updateVehicleStatusLocally(v);
+            render();
+            syncVehicle(v);
+        }
     };
+
+    window.changeMissionCount = (id, delta) => {
+        const v = state.fleet.find(x => x.id === id);
+        if (v) {
+            v.inMission = Math.min(v.count, Math.max(0, v.inMission + delta));
+            updateVehicleStatusLocally(v);
+            render();
+            syncVehicle(v);
+        }
+    };
+
+    function updateVehicleStatusLocally(v) {
+        if (v.count === 0) {
+            v.status = 'Pas déployé';
+        } else if (v.inMission > 0) {
+            v.status = 'Opérationnel';
+        } else {
+            v.status = 'En Base';
+        }
+    }
 
     window.updateCrew = (id, name) => {
         const v = state.fleet.find(x => x.id === id);
@@ -350,13 +395,16 @@ document.addEventListener('DOMContentLoaded', () => {
     window.updateStatus = (id, status) => {
         const v = state.fleet.find(x => x.id === id);
         if (v) {
-            v.status = status;
-            if (status === 'Détruit') {
-                // Keep count if destroyed? Or set to 0? 
-                // Previous logic set to 0.
+            if (status === 'Opérationnel') {
+                v.inMission = v.count;
+            } else if (status === 'En Base' || status === 'Pas déployé') {
+                v.inMission = 0;
+            } else if (status === 'Détruit') {
                 state.history.push({ type: 'LOSS', vehicle: v.type, count: v.count, time: new Date() });
                 v.count = 0;
+                v.inMission = 0;
             }
+            updateVehicleStatusLocally(v);
             render();
             syncVehicle(v);
         }
@@ -582,7 +630,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }).catch(err => console.error("Global Sync Error", err));
     }
     function syncVehicle(v) {
-        console.log(`[SYNC] ${v.type}`);
+        console.log(`[SYNC] ${v.type} | Despl: ${v.count}, Miss: ${v.inMission}`);
         fetch(API_URL, {
             method: 'POST',
             mode: 'no-cors',
@@ -593,6 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     id: v.id,
                     status: v.status,
                     deployed: v.count,
+                    inMission: v.inMission,
                     crew: v.crew
                 }
             })
