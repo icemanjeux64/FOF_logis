@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 // Extract index from indicatif (e.g., "AMB-1" -> index 0)
                                 const match = m.indicatif.match(/-(\d+)$/);
                                 const unitIndex = match ? parseInt(match[1]) - 1 : 0;
-                                
+
                                 if (unitIndex >= 0 && unitIndex < v.count) {
                                     const key = `${v.id}_${unitIndex}`;
                                     // Protect local changes: only overwrite if local state is empty or already logged
@@ -215,7 +215,16 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
             deployed.forEach(v => {
-                const statusColor = v.status === 'Détruit' ? 'text-red-500' : 'text-green-500';
+                const inBase = v.count - v.inMission;
+                const statusColor = v.count === 0 ? 'bg-red-500 text-red-500' : (v.inMission > 0 ? 'bg-green-500 text-green-500' : 'bg-blue-500 text-blue-500');
+                const statusText = v.count === 0 ? 'Hors Service' : (v.inMission > 0 ? 'Opérationnel' : 'En Base');
+
+                // Find active indicatifs for this vehicle type
+                const activeIndicatifs = Object.values(state.movements)
+                    .filter(m => m.vehicleType === v.type && m.status === 'En cours')
+                    .map(m => m.indicatif)
+                    .join(', ');
+
                 html += `
                     <div onclick="jumpToOpsCategory('${v.cat}')" class="bg-slate-800/40 rounded-xl p-4 border border-white/5 relative overflow-hidden cursor-pointer active:scale-95 transition-all group hover:bg-slate-800/60">
                         <div class="category-accent" style="background-color: ${v.color}"></div>
@@ -226,12 +235,20 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                             <div class="flex flex-col items-end">
                                 <span class="mono text-lg font-black text-blue-400">x${v.count}</span>
-                                <span class="text-[7px] text-slate-600 uppercase font-black">Déployés</span>
+                                <span class="text-[7px] text-slate-600 uppercase font-black">Total</span>
                             </div>
                         </div>
                         <div class="flex items-center gap-2 mt-3">
-                            <span class="status-pill bg-opacity-20 ${v.status === 'Détruit' ? 'bg-red-500 text-red-500' : 'bg-green-500 text-green-500'} text-[8px]">${v.status}</span>
-                            <span class="text-[9px] text-slate-500 mono italic">${v.crew || 'Sans pilote attitré'}</span>
+                            <span class="status-pill bg-opacity-20 ${statusColor} text-[8px]">${statusText}</span>
+                            <div class="flex gap-2">
+                                ${v.inMission > 0 ? `<span class="text-[8px] font-black text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">${v.inMission} MISSION</span>` : ''}
+                                ${inBase > 0 ? `<span class="text-[8px] font-black text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">${inBase} BASE</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-white/5">
+                            <span class="text-[9px] text-slate-500 mono italic line-clamp-1">
+                                ${activeIndicatifs ? `<span class="text-blue-400">Actifs:</span> ${activeIndicatifs}` : (v.crew || 'Sans pilote attitré')}
+                            </span>
                         </div>
                     </div>
                 `;
