@@ -467,13 +467,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     ` : ''}
                 </div>
 
-                <!-- UTILITIES -->
-                <div class="grid grid-cols-1 gap-3">
-                    <button onclick="resetAll()" 
-                            class="flex items-center justify-center gap-3 py-4 bg-slate-900/50 border border-white/5 rounded-xl text-red-500/60 hover:text-red-500 hover:bg-red-500/5 transition-all">
-                        <i data-lucide="refresh-ccw" class="w-4 h-4"></i>
-                        <span class="text-[8px] font-black uppercase tracking-widest">Réinitialiser l'application</span>
-                    </button>
                 </div>
 
                 <div class="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/10">
