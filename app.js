@@ -467,8 +467,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     ` : ''}
                 </div>
 
-                </div>
-
                 <div class="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/10">
                     <p class="text-[9px] text-blue-400/80 leading-relaxed italic text-center">
                         Note: La gestion des effectifs et du supply se fait directement en cliquant sur les statistiques dans l'en-tête de l'application.
