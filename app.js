@@ -114,12 +114,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Smart Merge of movements
                     if (response.movements) {
-                        Object.keys(response.movements).forEach(indicatif => {
-                            const m = response.movements[indicatif];
+                        Object.keys(response.movements).forEach(indicatifKey => {
+                            const m = response.movements[indicatifKey];
                             const v = state.fleet.find(f => f.type === m.vehicleType);
                             if (v) {
-                                for (let i = 0; i < v.inMission; i++) {
-                                    const key = `${v.id}_${i}`;
+                                // Extract index from indicatif (e.g., "AMB-1" -> index 0)
+                                const match = m.indicatif.match(/-(\d+)$/);
+                                const unitIndex = match ? parseInt(match[1]) - 1 : 0;
+                                
+                                if (unitIndex >= 0 && unitIndex < v.count) {
+                                    const key = `${v.id}_${unitIndex}`;
                                     // Protect local changes: only overwrite if local state is empty or already logged
                                     if (!state.movements[key] || state.movements[key].isLogged) {
                                         state.movements[key] = { ...m, isLogged: true };

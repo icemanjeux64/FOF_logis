@@ -36,7 +36,8 @@ function getActiveMovements(ss) {
           crew: String(row[3]),
           mission: String(row[4]),
           status: status,
-          condition: String(row[6])
+          condition: String(row[6]),
+          remark: String(row[7] || "")
         };
       }
     }
