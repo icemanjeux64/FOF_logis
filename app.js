@@ -457,20 +457,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     <h2 class="text-sm font-black uppercase tracking-widest text-cyan-400">Catalogue de Déploiement</h2>
                     <span class="text-[10px] text-slate-500 uppercase">${state.fleet.length} MODÈLES DISPONIBLES</span>
                 </div>
-                <div class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 p-1 custom-scrollbar">
+                <div class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-1 custom-scrollbar">
                     ${state.fleet.map(v => `
-                        <div onclick="deployVehicle(${v.id})" class="hud-panel p-3 border border-cyan-500/20 rounded-xl cursor-pointer group hover:border-cyan-400 transition-all flex flex-col gap-1 min-h-[70px] sm:min-h-0 !overflow-visible">
-                            <div class="flex justify-between items-center mb-0.5">
-                                <span class="text-[8px] sm:text-[9px] px-1.5 py-0.5 border border-cyan-500/30 text-cyan-500 rounded uppercase font-black tracking-tighter bg-black/40">${v.grade}</span>
-                                <span class="text-[7px] font-black text-slate-500 uppercase opacity-60 px-1 truncate max-w-[40%]">${v.cat}</span>
-                                <div class="flex flex-col items-end">
-                                    <span class="text-[8px] sm:text-[9px] font-black font-orbitron text-cyan-400 shadow-[0_0_10px_rgba(0,242,255,0.2)] whitespace-nowrap">${v.cost} PTS</span>
-                                    <span class="text-[7px] font-black text-white/40 mt-0.5">${v.count > 0 ? `x${v.count}` : ''}</span>
+                        <div onclick="deployVehicle(${v.id})" class="hud-panel p-4 border border-cyan-500/20 rounded-xl cursor-pointer group hover:border-cyan-400 transition-all flex flex-col gap-2 min-h-[100px] !overflow-visible shadow-lg hover:shadow-cyan-500/10">
+                            <div class="flex justify-between items-start">
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-[9px] px-1.5 py-0.5 border border-cyan-500/30 text-cyan-500 rounded uppercase font-black tracking-tighter bg-black/40 w-fit">${v.grade}</span>
+                                    <span class="text-[7px] font-black text-slate-500 uppercase opacity-60 tracking-wider">${v.cat}</span>
+                                </div>
+                                <div class="flex flex-col items-end gap-1">
+                                    <span class="text-[10px] font-black font-orbitron text-cyan-400 shadow-[0_0_10px_rgba(0,242,255,0.2)] whitespace-nowrap">${v.cost} PTS</span>
+                                    <span class="text-[8px] font-black text-white/40">${v.count > 0 ? `ACTIF: x${v.count}` : ''}</span>
                                 </div>
                             </div>
                             
-                            <div class="flex-1 flex items-center justify-center text-center">
-                                <h3 class="font-black text-[10px] sm:text-[11px] text-white uppercase leading-tight group-hover:text-cyan-400 tracking-tight break-words w-full">${v.type}</h3>
+                            <div class="flex-1 flex items-center justify-center text-center py-1">
+                                <h3 class="font-black text-xs sm:text-sm text-white uppercase leading-tight group-hover:text-cyan-400 tracking-tight break-words w-full font-orbitron">${v.type}</h3>
                             </div>
                         </div>
                     `).join('')}
