@@ -189,11 +189,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!badge || !text) return;
 
             if (state.isShiftActive) {
-                badge.className = "px-2 py-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-[8px] lg:text-[10px] font-black uppercase tracking-widest flex items-center gap-1 opacity-100";
-                badge.innerHTML = `<div class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></div><span id="sl-status-text">EN SERVICE : ${state.slName}</span>`;
+                badge.className = "px-1.5 py-0.5 lg:px-2 lg:py-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-[7px] lg:text-[10px] font-black uppercase tracking-widest flex items-center gap-1 opacity-100";
+                badge.innerHTML = `<div class="w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full bg-cyan-400 animate-pulse"></div><span id="sl-status-text">EN SERVICE : ${state.slName}</span>`;
             } else {
-                badge.className = "px-2 py-1 rounded border border-red-500/40 bg-red-500/10 text-[8px] lg:text-[10px] font-black uppercase tracking-widest flex items-center gap-1 opacity-100 text-red-500";
-                badge.innerHTML = `<div class="w-1.5 h-1.5 rounded-full bg-red-500"></div><span id="sl-status-text">OFFLINE</span>`;
+                badge.className = "px-1.5 py-0.5 lg:px-2 lg:py-1 rounded border border-red-500/40 bg-red-500/10 text-[7px] lg:text-[10px] font-black uppercase tracking-widest flex items-center gap-1 opacity-100 text-red-500";
+                badge.innerHTML = `<div class="w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full bg-red-500"></div><span id="sl-status-text">OFFLINE</span>`;
             }
         }
         updateStatusBadge();
@@ -411,7 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="text-[9px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1">Sélection d'Unité</div>
                             <h3 class="text-xl font-black text-white uppercase font-orbitron">${v.type} <span class="text-cyan-400 opacity-50 text-sm">x${v.count}</span></h3>
                         </div>
-                        <button onclick="closeModal()" class="text-slate-500 hover:text-white transition-all">
+                        <button onclick="closeModal()" title="Fermer" class="text-slate-500 hover:text-white transition-all">
                             <i data-lucide="x" class="w-5 h-5"></i>
                         </button>
                     </div>
@@ -421,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const unitKey = `${v.id}_${i}`;
                 const isMission = state.movements[unitKey]?.status === 'En cours';
                 return `
-                                <button onclick="openUnitModal('${unitKey}')" 
+                                <button onclick="openUnitModal('${unitKey}')" title="Gérer l'unité ${i + 1}"
                                         class="p-4 bg-black/40 border border-cyan-500/10 rounded-lg flex justify-between items-center hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group">
                                     <div class="flex flex-col items-start">
                                         <span class="text-[10px] font-black text-white uppercase group-hover:text-cyan-400">UNITÉ ${i + 1}</span>
@@ -453,26 +453,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.getElementById('main-content');
         container.innerHTML = `
             <div class="h-full flex flex-col animate-in fade-in zoom-in duration-300">
-                <div class="mb-4 flex justify-between items-center">
-                    <h2 class="text-sm font-black uppercase tracking-widest text-cyan-400">Catalogue de Déploiement</h2>
-                    <span class="text-[10px] text-slate-500 uppercase">${state.fleet.length} MODÈLES DISPONIBLES</span>
+                <div class="mb-3 flex justify-between items-center border-b border-cyan-500/10 pb-2">
+                    <h2 class="text-[10px] lg:text-sm font-black uppercase tracking-widest text-cyan-400">Catalogue de Déploiement</h2>
+                    <span class="text-[8px] lg:text-[10px] text-slate-500 uppercase">${state.fleet.length} MODÈLES</span>
                 </div>
-                <div class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-1 custom-scrollbar">
+                <div class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4 p-1 custom-scrollbar">
                     ${state.fleet.map(v => `
-                        <div onclick="deployVehicle(${v.id})" class="hud-panel p-4 border border-cyan-500/20 rounded-xl cursor-pointer group hover:border-cyan-400 transition-all flex flex-col gap-2 min-h-[100px] !overflow-visible shadow-lg hover:shadow-cyan-500/10">
+                        <div onclick="deployVehicle(${v.id})" class="hud-panel p-3 lg:p-4 border border-cyan-500/20 rounded-xl cursor-pointer group hover:border-cyan-400 transition-all flex flex-col gap-2 min-h-[90px] lg:min-h-[100px] !overflow-visible shadow-lg">
                             <div class="flex justify-between items-start">
-                                <div class="flex flex-col gap-1">
-                                    <span class="text-[9px] px-1.5 py-0.5 border border-cyan-500/30 text-cyan-500 rounded uppercase font-black tracking-tighter bg-black/40 w-fit">${v.grade}</span>
-                                    <span class="text-[7px] font-black text-slate-500 uppercase opacity-60 tracking-wider">${v.cat}</span>
+                                <div class="flex flex-col gap-0.5 lg:gap-1">
+                                    <span class="text-[8px] lg:text-[9px] px-1.5 py-0.5 border border-cyan-500/30 text-cyan-500 rounded uppercase font-black bg-black/40 w-fit">${v.grade}</span>
+                                    <span class="text-[6px] lg:text-[7px] font-black text-slate-500 uppercase opacity-60 tracking-wider">${v.cat}</span>
                                 </div>
                                 <div class="flex flex-col items-end gap-1">
-                                    <span class="text-[10px] font-black font-orbitron text-cyan-400 shadow-[0_0_10px_rgba(0,242,255,0.2)] whitespace-nowrap">${v.cost} PTS</span>
-                                    <span class="text-[8px] font-black text-white/40">${v.count > 0 ? `ACTIF: x${v.count}` : ''}</span>
+                                    <span class="text-[8px] lg:text-[10px] font-black font-orbitron text-cyan-400 shadow-[0_0_10px_rgba(0,242,255,0.2)] whitespace-nowrap">${v.cost} <span class="text-[0.8em]">PTS</span></span>
+                                    <span class="text-[7px] lg:text-[8px] font-black text-white/40">${v.count > 0 ? `ACTIF: x${v.count}` : ''}</span>
                                 </div>
                             </div>
                             
-                            <div class="flex-1 flex items-center justify-center text-center py-1">
-                                <h3 class="font-black text-xs sm:text-sm text-white uppercase leading-tight group-hover:text-cyan-400 tracking-tight break-words w-full font-orbitron">${v.type}</h3>
+                            <div class="flex-1 flex items-center justify-center text-center">
+                                <h3 class="font-black text-[10px] lg:text-sm text-white uppercase leading-tight group-hover:text-cyan-400 tracking-tight break-words w-full font-orbitron">${v.type}</h3>
                             </div>
                         </div>
                     `).join('')}
@@ -527,6 +527,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- UTILITIES ---
+    window.toggleMobileMenu = () => {
+        const menu = document.getElementById('mobile-menu-overlay');
+        if (!menu) return;
+
+        if (menu.classList.contains('menu-closed')) {
+            menu.classList.remove('menu-closed');
+            menu.classList.add('menu-open');
+        } else {
+            menu.classList.add('menu-closed');
+            menu.classList.remove('menu-open');
+        }
+    };
+
     function startClock() {
         setInterval(() => {
             const now = new Date();
@@ -591,7 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
         content.innerHTML = `
             <div class="p-6 relative">
                 <div class="absolute top-0 right-0 p-4">
-                    <button onclick="closeModal()" class="text-slate-500 hover:text-white transition-all">
+                    <button onclick="closeModal()" title="Fermer" class="text-slate-500 hover:text-white transition-all">
                         <i data-lucide="x" class="w-5 h-5"></i>
                     </button>
                 </div>
@@ -641,12 +654,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
 
                 <div class="flex flex-col sm:flex-row gap-3">
-                    <button onclick="syncMovement('${unitKey}')" 
+                    <button onclick="syncMovement('${unitKey}')" title="Transmettre les ordres au serveur"
                             class="flex-1 py-4 bg-cyan-600 border border-cyan-400 text-white font-black uppercase tracking-widest text-[10px] rounded hover:bg-cyan-500 transition-all shadow-[0_0_20px_rgba(0,242,255,0.1)] active:scale-95">
                         Transmettre les Ordres
                     </button>
                     ${m.status === 'En cours' ? `
-                        <button onclick="finishMission('${unitKey}')" 
+                        <button onclick="finishMission('${unitKey}')" title="Clôturer la mission"
                                 class="flex-1 py-4 bg-red-600/20 border border-red-500/40 text-red-500 font-black uppercase tracking-widest text-[10px] rounded hover:bg-red-600 hover:text-white transition-all active:scale-95">
                             Finir la Mission
                         </button>
