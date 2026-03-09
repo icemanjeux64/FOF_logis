@@ -215,7 +215,7 @@ body {
     /* COMPACT HEADER LAYOUT */
     header {
         display: grid !important;
-        grid-template-areas:
+        grid-template_areas:
             "logo time badge"
             "title title title" !important;
         grid-template-columns: 1fr 2fr 1fr !important;
@@ -225,19 +225,19 @@ body {
         gap: 0.5rem !important;
     }
 
-    header>div:first-of-type {
+    .header-logo {
         grid-area: logo;
         justify-self: start;
         margin: 0 !important;
     }
 
-    header>div:nth-of-type(2) {
+    .header-time {
         grid-area: time;
         justify-self: center;
         margin: 0 !important;
     }
 
-    header>div:last-of-type {
+    .header-badge {
         grid-area: badge;
         justify-self: end;
         position: relative !important;
@@ -245,7 +245,7 @@ body {
         right: 0 !important;
     }
 
-    header .text-center {
+    .header-title {
         grid-area: title;
         margin-top: 0.25rem;
     }
@@ -268,19 +268,17 @@ body {
         margin-top: 0;
     }
 
-    /* ONLY SHOW HAMBURGER ON PHONE (< 768px) */
-    .menu-toggle-btn {
-        display: block !important;
-    }
-}
-
-@media (min-width: 769px) {
-    .menu-toggle-btn {
-        display: none !important;
+    /* ONLY SHOW FAB ON MOBILE/TABLET (< 1025px) */
+    .menu-fab {
+        display: flex !important;
     }
 }
 
 @media (min-width: 1025px) {
+    .menu-fab {
+        display: none !important;
+    }
+
     .hud-container {
         padding: 1rem;
         max-width: 100% !important;
@@ -300,7 +298,7 @@ body {
     }
 }
 
-/* HAMBURGER MENU */
+/* HAMBURGER MENU / OVERLAY */
 #mobile-menu-overlay {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -470,4 +468,34 @@ body {
     background: #ef4444;
     color: white;
     box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+/* FLOATING MENU BUTTON (FAB) */
+.menu-fab {
+    position: fixed;
+    bottom: 5.5rem;
+    /* Above bottom nav */
+    right: 1.5rem;
+    width: 3.5rem;
+    height: 3.5rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--cyan-dim);
+    border-radius: 50%;
+    color: var(--cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.4);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.menu-fab:active {
+    scale: 0.9;
+    box-shadow: 0 0 30px var(--cyan);
+}
+
+.menu-fab i {
+    width: 1.5rem;
+    height: 1.5rem;
 }
