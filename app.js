@@ -1,56 +1,48 @@
-// app.js - FOF Logistics Mobile Command Logic
-
+// app.js - FOF Tactical HUD V2 Logic
 document.addEventListener('DOMContentLoaded', () => {
 
     const API_URL = 'https://script.google.com/macros/s/AKfycbxEwlrKIZNgIb-4WEBPeaz35ekVvRuL8HRAplehgssnKKg6XG0-t9zze62TOgBZK2Q/exec';
 
     // --- STATE MANAGEMENT ---
     let state = {
-        currentTab: 'dashboard',
+        currentView: 'dashboard',
         supply: 12000,
+        maxSupply: 20000, // Updated per user request
         isShiftActive: false,
         startTime: null,
         slName: 'Non identifié',
         personnel: 0,
         medics: 0,
-        fleet: [], // Loaded from API
-        history: [],
-        movements: {}, // Temporary data for Crew Management: { unitKey: { indicatif, mission, status, condition } }
-        expandedCategory: null, // Selected Category to show Vehicles
-        expandedVehicleId: null, // Selected vehicle type to show grid
-        editingUnitKey: null, // Selected unit to show modal
+        fleet: [],
+        movements: {}, // { unitKey: { ...props } }
         isSyncing: false,
         lastSync: null
     };
 
-    // Load settings from local storage
-    const savedSettings = JSON.parse(localStorage.getItem('fof_logi_settings'));
-    if (savedSettings) {
-        state.slName = savedSettings.slName || 'Non identifié';
-        state.personnel = savedSettings.personnel || 0;
-        state.medics = savedSettings.medics || 0;
+    // Load local settings
+    const saved = JSON.parse(localStorage.getItem('fof_logi_settings'));
+    if (saved) {
+        state.slName = saved.slName || 'Non identifié';
+        state.personnel = saved.personnel || 0;
+        state.medics = saved.medics || 0;
     }
 
     // --- NAVIGATION ---
-    window.switchTab = (tabId) => {
-        state.currentTab = tabId;
+    window.changeView = (viewId) => {
+        state.currentView = viewId;
 
-        // Update UI Nav
-        document.querySelectorAll('nav button').forEach(btn => {
-            btn.classList.remove('tab-active');
-            const span = btn.querySelector('span');
-            const icon = btn.querySelector('i, svg');
-            if (span) span.classList.remove('text-blue-400');
-            if (icon) icon.classList.remove('text-blue-400');
+        // Update Nav Menu styling
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.classList.remove('text-cyan-400', 'border-b-2', 'border-cyan-400');
+            btn.classList.add('text-slate-500');
         });
 
-        const activeBtn = document.getElementById(`nav-${tabId}`);
-        if (activeBtn) {
-            activeBtn.classList.add('tab-active');
-            const span = activeBtn.querySelector('span');
-            const icon = activeBtn.querySelector('i, svg');
-            if (span) span.classList.add('text-blue-400');
-            if (icon) icon.classList.add('text-blue-400');
+        // Map viewId to button indices or IDs
+        const viewMap = { 'dashboard': 0, 'operations': 1, 'fleet': 2, 'service': 3 };
+        const buttons = document.querySelectorAll('.nav-btn');
+        if (buttons[viewMap[viewId]]) {
+            buttons[viewMap[viewId]].classList.add('text-cyan-400', 'border-b-2', 'border-cyan-400');
+            buttons[viewMap[viewId]].classList.remove('text-slate-500');
         }
 
         render();
@@ -60,22 +52,18 @@ document.addEventListener('DOMContentLoaded', () => {
     window.init = (isSilent = false) => {
         if (!isSilent) state.isSyncing = true;
         const syncBtn = document.getElementById('sync-btn');
-        if (syncBtn) syncBtn.classList.add('spin');
+        if (syncBtn) syncBtn.classList.add('animate-spin');
 
         fetch(`${API_URL}?action=get_data`)
             .then(res => res.json())
             .then(response => {
                 state.isSyncing = false;
-                if (syncBtn) syncBtn.classList.remove('spin');
+                if (syncBtn) syncBtn.classList.remove('animate-spin');
 
                 if (response.status === 'success') {
-                    // Update last sync time
-                    const now = new Date();
-                    state.lastSync = now;
-                    const syncEl = document.getElementById('last-sync');
-                    if (syncEl) syncEl.innerText = `Sinc: ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+                    state.lastSync = new Date();
 
-                    // Filter and map backend data to local state format
+                    // Fleet logic
                     state.fleet = response.data
                         .filter(v => v.id >= 9 && v.name !== "Type de véhicule")
                         .map(v => ({
@@ -88,94 +76,77 @@ document.addEventListener('DOMContentLoaded', () => {
                             inMission: parseInt(v.inMission) || 0,
                             status: v.status || 'En Base',
                             crew: v.crew || v.note || '',
-                            destroyed: parseInt(v.destroyed) || 0, // Ensure destroyed is synced
+                            destroyed: parseInt(v.destroyed) || 0,
                             color: getCategoryColor(v.category)
                         }));
 
-                    // Synchronize global settings from backend
+                    // Globals logic
                     if (response.globals) {
                         state.supply = response.globals.supply;
                         state.personnel = response.globals.personnel;
                         state.medics = response.globals.medics;
                         state.slName = response.globals.slName || 'Non identifié';
 
-                        // Global Shift Sync
-                        const isOnline = state.slName !== 'Non identifié' && state.slName !== '' && !response.globals.shiftEndTime;
+                        const slUpper = state.slName.toUpperCase();
+                        const isOnline = state.slName !== 'Non identifié' &&
+                            state.slName !== '' &&
+                            slUpper !== 'OFF' &&
+                            slUpper !== 'OFFLINE' &&
+                            !response.globals.shiftEndTime;
                         state.isShiftActive = isOnline;
 
-                        // Robust Date Parsing
                         if (isOnline && response.globals.shiftStartTime) {
-                            const parsedDate = new Date(response.globals.shiftStartTime);
-                            state.startTime = isNaN(parsedDate.getTime()) ? null : parsedDate;
+                            // Ensure we have a valid ISO string or parseable format
+                            const startTime = new Date(response.globals.shiftStartTime);
+                            if (!isNaN(startTime.getTime())) {
+                                state.startTime = startTime;
+                            } else {
+                                state.startTime = null;
+                            }
                         } else {
                             state.startTime = null;
                         }
                     }
 
-                    // Smart Merge of movements
+                    // Movements logic
                     if (response.movements) {
-                        Object.keys(response.movements).forEach(indicatifKey => {
-                            const m = response.movements[indicatifKey];
+                        state.movements = {}; // Reset local movements for fresh sync
+                        Object.keys(response.movements).forEach(indicatif => {
+                            const m = response.movements[indicatif];
                             const v = state.fleet.find(f => f.type === m.vehicleType);
                             if (v) {
                                 // Extract index from indicatif (e.g., "AMB-1" -> index 0)
                                 const match = m.indicatif.match(/-(\d+)$/);
                                 const unitIndex = match ? parseInt(match[1]) - 1 : 0;
-
-                                if (unitIndex >= 0 && unitIndex < v.count) {
-                                    const key = `${v.id}_${unitIndex}`;
-                                    // Protect local changes: only overwrite if local state is empty or already logged
-                                    if (!state.movements[key] || state.movements[key].isLogged) {
-                                        state.movements[key] = { ...m, isLogged: true };
-                                    }
-                                }
+                                const key = `${v.id}_${unitIndex}`;
+                                state.movements[key] = { ...m, isLogged: true };
                             }
                         });
                     }
 
                     render();
-                } else {
-                    console.error("API Error:", response.message);
                 }
             })
             .catch(err => {
+                console.error("Tactical HUD Sync Error", err);
                 state.isSyncing = false;
-                if (syncBtn) syncBtn.classList.remove('spin');
-                console.error("Initialization Error", err);
+                if (syncBtn) syncBtn.classList.remove('animate-spin');
             });
 
-        // Start Timer only once
         if (!window.timerStarted) {
-            startTimer();
-            startBackgroundSync();
+            startClock();
+            startSessionTimer();
             window.timerStarted = true;
         }
     };
 
-    window.manualRefresh = () => {
-        if (state.isSyncing) return;
-        init(false);
-    };
-
-    function startBackgroundSync() {
-        // Poll every 30 seconds
-        setInterval(() => {
-            if (!state.isSyncing) {
-                init(true);
-            }
-        }, 30000);
-    }
-
     function getCategoryColor(cat) {
-        if (!cat) return '#a855f7';
+        if (!cat) return '#00f2ff';
         const c = cat.toUpperCase();
-        if (c.includes('TRANSPORT')) return '#facc15';
-        if (c.includes('MAINTENANCE')) return '#ef4444';
-        if (c.includes('RAVITAILLEMENT')) return '#ec4899';
-        if (c.includes('BLINDÉ')) return '#fb923c';
-        if (c.includes('COMBAT')) return '#ea580c';
-        if (c.includes('AÉRIEN')) return '#2563eb';
-        return '#a855f7';
+        if (c.includes('TRANSPORT')) return '#facc15'; // Jaune
+        if (c.includes('MAINTENANCE')) return '#ef4444'; // Rouge
+        if (c.includes('AÉRIEN')) return '#2563eb'; // Bleu
+        return '#00f2ff'; // Cyan par défaut
     }
 
     // --- RENDERERS ---
@@ -183,871 +154,418 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.getElementById('main-content');
         if (!container) return;
 
-        container.innerHTML = '';
+        updateHeaderStats();
 
-        if (state.currentTab === 'dashboard') renderDashboard(container);
-        else if (state.currentTab === 'fleet') renderFleet(container);
-        else if (state.currentTab === 'ops') renderOps(container);
-        else if (state.currentTab === 'service') renderService(container);
+        if (state.currentView === 'dashboard') renderDashboard();
+        else if (state.currentView === 'operations') renderOperationsView();
+        else if (state.currentView === 'fleet') renderFleetCatalogue();
+        else if (state.currentView === 'service') renderServiceControl();
 
-        updateGlobalStats();
+        lucide.createIcons();
+    };
+
+    function updateHeaderStats() {
+        // Real-time Clock
+        const clock = document.getElementById('real-time-clock');
+        if (clock) {
+            const now = new Date();
+            clock.innerText = now.toLocaleTimeString('fr-FR');
+        }
+
+        // Shift Duration Timer
+        const durationContainer = document.getElementById('shift-duration-container');
+        const durationTimer = document.getElementById('shift-duration-timer');
+
+        if (state.isShiftActive && state.startTime && durationContainer && durationTimer) {
+            durationContainer.classList.remove('hidden');
+            // Logic moved to startClock for second-by-second precision
+        } else if (durationContainer) {
+            durationContainer.classList.add('hidden');
+        }
+
+        function updateStatusBadge() {
+            const badge = document.getElementById('sl-status-badge');
+            const text = document.getElementById('sl-status-text');
+            if (!badge || !text) return;
+
+            if (state.isShiftActive) {
+                badge.className = "px-2 py-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-[8px] lg:text-[10px] font-black uppercase tracking-widest flex items-center gap-1 opacity-100";
+                badge.innerHTML = `<div class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></div><span id="sl-status-text">EN SERVICE : ${state.slName}</span>`;
+            } else {
+                badge.className = "px-2 py-1 rounded border border-red-500/40 bg-red-500/10 text-[8px] lg:text-[10px] font-black uppercase tracking-widest flex items-center gap-1 opacity-100 text-red-500";
+                badge.innerHTML = `<div class="w-1.5 h-1.5 rounded-full bg-red-500"></div><span id="sl-status-text">OFFLINE</span>`;
+            }
+        }
+        updateStatusBadge();
+        // Sync Info (Hidden on mobile footer, just in state now)
+        const syncEl = document.getElementById('last-sync');
+        if (syncEl && state.lastSync) {
+            syncEl.innerText = `MAJ: ${state.lastSync.toLocaleTimeString('fr-FR')}`;
+        }
+    }
+
+    function renderDashboard() {
+        const content = document.getElementById('main-content');
+        content.innerHTML = `
+            <div id="dashboard-view" class="h-full flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-2 xl:gap-4 h-full min-h-0 flex-1">
+                    <!-- PANEL 1: ENLARGED STATS -->
+                    <section class="hud-panel p-2 xl:p-4 border border-cyan-500/40 rounded bg-black/60 flex flex-col h-full overflow-hidden">
+                        <div class="flex flex-col gap-2 xl:gap-3 justify-around h-full">
+                            <!-- CIRCULAR SUPPLY GAUGE -->
+                            <div onclick="updateBaseStat('supply', ${state.supply})" class="bg-slate-900/40 border border-blue-500/30 p-2 xl:p-4 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-blue-500/10 active:scale-95 transition-all flex-1 min-h-0 relative">
+                                <span class="text-[8px] xl:text-[10px] text-blue-300 font-black uppercase tracking-widest leading-none mb-1">Réserve Supply</span>
+                                <div class="flex-1 flex items-center justify-center min-h-0 w-full mb-4">
+                                    <div class="circle-gauge scale-[0.65] lg:scale-90 xl:scale-110 transition-transform">
+                                        <svg viewBox="0 0 100 100">
+                                            <circle class="bg" cx="50" cy="50" r="42"></circle>
+                                            <circle class="progress" cx="50" cy="50" r="42" 
+                                                style="stroke-dasharray: 264; stroke-dashoffset: ${264 - (264 * Math.min(1, state.supply / state.maxSupply))}">
+                                            </circle>
+                                        </svg>
+                                        <div class="gauge-value-container">
+                                            <span class="text-sm xl:text-lg font-black font-orbitron text-blue-400 leading-none">
+                                                ${Math.round((state.supply / state.maxSupply) * 100)}<span class="text-[0.7em] ml-0.5">%</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="absolute bottom-2 left-0 right-0 flex justify-center">
+                                    <span class="text-[10px] xl:text-lg font-black font-orbitron text-white leading-none whitespace-nowrap">${state.supply} / 20k</span>
+                                </div>
+                            </div>
+
+                            <!-- SECONDARY STATS (Side-by-side on mobile) -->
+                            <div class="grid grid-cols-3 lg:flex lg:flex-col gap-2 flex-none">
+                                <div onclick="updateBaseStat('personnel', ${state.personnel})" class="stat-card-adaptive bg-slate-900/40 border border-green-500/30 p-2 xl:p-4 rounded-lg flex flex-col lg:flex-row items-center lg:justify-between cursor-pointer hover:bg-green-500/10 active:scale-95 transition-all text-center lg:text-left min-h-0">
+                                    <div class="flex flex-col">
+                                        <span class="text-[6px] xl:text-[10px] text-green-300 font-black uppercase tracking-widest leading-none mb-1">Effectifs</span>
+                                        <span class="text-sm xl:text-2xl font-black font-orbitron text-green-400 leading-none">${state.personnel}</span>
+                                    </div>
+                                    <i data-lucide="users" class="hidden lg:block w-4 h-4 xl:w-8 xl:h-8 text-green-500 opacity-40"></i>
+                                </div>
+
+                                <div onclick="updateBaseStat('medics', ${state.medics})" class="stat-card-adaptive bg-slate-900/40 border border-pink-500/30 p-2 xl:p-4 rounded-lg flex flex-col lg:flex-row items-center lg:justify-between cursor-pointer hover:bg-pink-500/10 active:scale-95 transition-all text-center lg:text-left min-h-0">
+                                    <div class="flex flex-col">
+                                        <span class="text-[6px] xl:text-[10px] text-pink-300 font-black uppercase tracking-widest leading-none mb-1">V2 / EVS</span>
+                                        <span class="text-sm xl:text-2xl font-black font-orbitron text-pink-500 leading-none">${state.medics}</span>
+                                    </div>
+                                    <i data-lucide="cross" class="hidden lg:block w-4 h-4 xl:w-8 xl:h-8 text-pink-500 opacity-40"></i>
+                                </div>
+
+                                <div class="stat-card-adaptive bg-slate-900/40 border border-cyan-500/40 p-2 xl:p-4 rounded-lg flex flex-col lg:flex-row items-center lg:justify-between flex-none text-center lg:text-left min-h-0">
+                                    <div class="flex flex-col">
+                                        <span class="text-[6px] xl:text-[10px] text-cyan-300 font-black uppercase tracking-widest leading-none mb-1">Missions</span>
+                                        <span class="text-sm xl:text-2xl font-black font-orbitron text-cyan-400 leading-none">${Object.values(state.movements).filter(m => m.status === 'En cours').length}</span>
+                                    </div>
+                                    <i data-lucide="radio" class="hidden lg:block w-4 h-4 xl:w-8 xl:h-8 text-cyan-500 opacity-40 animate-pulse"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- PANEL 2: SUIVI DES MISSIONS ACTIVES -->
+                    <section class="hud-panel h-full p-4 xl:p-5 border border-cyan-500/40 rounded bg-black/40 overflow-hidden flex flex-col h-full">
+                        <h2 class="text-[10px] xl:text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2 text-white border-b border-cyan-500/20 pb-2">
+                            <i data-lucide="shield" class="w-4 h-4 text-amber-500"></i>
+                            Suivi des Missions
+                        </h2>
+                        <div id="active-missions-list" class="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar min-h-0">
+                           <div class="flex flex-col items-center justify-center h-full opacity-20 italic text-[10px] uppercase font-black tracking-[0.2em]">Initialisation des flux...</div>
+                        </div>
+                    </section>
+                    
+                    <!-- PANEL 3: DEPLOYED UNITS (HIDDEN ON MOBILE DASHBOARD, VISIBLE ON LARGE) -->
+                    <section class="hidden lg:flex hud-panel h-full p-4 xl:p-5 border border-cyan-500/40 rounded bg-black/40 overflow-hidden flex-col h-full">
+                        <h2 class="text-[10px] xl:text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2 text-white border-b border-cyan-500/20 pb-2">
+                            <i data-lucide="truck" class="w-4 h-4 text-cyan-500"></i>
+                            Unités Déployées
+                        </h2>
+                        <div id="fleet-grid-dash" class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-2 xl:gap-3 pr-2 custom-scrollbar min-h-0">
+                           <!-- Deployed units here -->
+                        </div>
+                    </section>
+                </div>
+            </div>
+        `;
+        renderMissionsList();
+        renderFleetGrid('fleet-grid-dash');
+        updateQuickStats();
+    }
+
+    function renderOperationsView() {
+        const content = document.getElementById('main-content');
+        content.innerHTML = `
+            <div id="operations-view" class="h-full flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <!-- FLEET MONITORING GRID -->
+                <div class="flex-1 border border-cyan-500/40 rounded bg-black/40 p-5 overflow-hidden flex flex-col relative">
+                    <h2 class="text-xs font-black uppercase tracking-widest mb-4 flex items-center justify-between text-white">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="truck" class="w-4 h-4"></i>
+                            Unités Déployées & Surveillance
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="flex items-center gap-2 text-[9px] uppercase font-bold text-slate-500">
+                                <span class="w-2 h-2 rounded-full bg-green-500"></span> Opérationnel
+                            </div>
+                           <div class="flex items-center gap-2 text-[9px] uppercase font-bold text-slate-500">
+                                <span class="w-2 h-2 rounded-full bg-blue-500"></span> En Base
+                            </div>
+                        </div>
+                    </h2>
+                    <div id="fleet-grid" class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 pr-2 custom-scrollbar">
+                        <!-- Fleet categories/units injected here -->
+                    </div>
+                </div>
+            </div>
+        `;
+        renderFleetGrid();
+    }
+
+    function updateQuickStats() {
+        if (document.getElementById('dash-stat-supply')) {
+            document.getElementById('dash-stat-supply').innerText = state.supply;
+            document.getElementById('dash-stat-active').innerText = state.fleet.reduce((a, b) => a + (b.count || 0), 0);
+            document.getElementById('dash-stat-personnel').innerText = state.personnel;
+            document.getElementById('dash-stat-lost').innerText = state.fleet.reduce((a, b) => a + (b.destroyed || 0), 0);
+            document.getElementById('dash-stat-medics').innerText = state.medics;
+            document.getElementById('dash-stat-missions').innerText = Object.values(state.movements).filter(m => m.status === 'En cours').length;
+        }
+    }
+
+    function renderMissionsList() {
+        const listContainer = document.getElementById('active-missions-list');
+        if (!listContainer) return;
+
+        const activeMissions = Object.entries(state.movements).filter(([key, m]) => m.status === 'En cours');
+
+        if (activeMissions.length === 0) {
+            listContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-full opacity-20 italic text-[10px] uppercase font-black tracking-[0.2em]">Aucun mouvement en cours</div>`;
+            return;
+        }
+
+        listContainer.innerHTML = activeMissions.map(([unitKey, m]) => `
+            <div onclick="openUnitModal('${unitKey}')" class="mission-alert-card p-3 border border-amber-500/10 rounded relative group cursor-pointer hover:border-cyan-500/30 transition-all">
+                <div class="flex justify-between items-start mb-1">
+                    <span class="text-[9px] font-black text-amber-500 uppercase tracking-widest">${m.indicatif}</span>
+                    <span class="text-[8px] text-slate-500 font-bold uppercase">${m.vehicleType}</span>
+                </div>
+                <div class="text-[10px] font-bold text-white uppercase mb-1 line-clamp-1">${m.mission || 'PATROUILLE GÉNÉRALE'}</div>
+                <div class="flex justify-between items-center text-[8px] text-slate-400">
+                    <span>PILOTE: ${m.crew || 'N/A'}</span>
+                    <div class="flex items-center gap-1 text-cyan-400">
+                        <i data-lucide="target" class="w-2.5 h-2.5"></i>
+                        ${m.condition || '100%'}
+                    </div>
+                </div>
+            </div>
+        `).join('');
         lucide.createIcons();
     }
 
-    function renderDashboard(container) {
+    function renderFleetGrid(targetId = 'fleet-grid') {
+        const container = document.getElementById(targetId);
+        if (!container) return;
+
         const deployed = state.fleet.filter(v => v.count > 0);
-
-        let html = `
-            <div class="mb-6 flex justify-between items-center">
-                <h2 class="text-xl font-black uppercase tracking-tight">Tableau de Bord</h2>
-                <span class="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-1 rounded font-bold">${deployed.length} TYPES ACTIFS</span>
-            </div>
-        `;
-
         if (deployed.length === 0) {
-            html += `
-                <div class="flex flex-col items-center justify-center py-20 text-slate-600 opacity-50">
-                    <i data-lucide="package-open" class="w-12 h-12 mb-4"></i>
-                    <p class="text-xs font-bold uppercase tracking-widest">Aucune unité sur le terrain</p>
-                    <button onclick="switchTab('fleet')" class="mt-4 text-blue-500 text-[10px] font-black underline uppercase">Aller à la Flotte</button>
+            container.innerHTML = `<div class="col-span-full py-10 text-center opacity-20 uppercase font-black tracking-widest text-xs">Aucune unité sur le terrain</div>`;
+            return;
+        }
+
+        container.innerHTML = deployed.map(v => {
+            const inBase = v.count - v.inMission;
+            const statusColor = v.inMission > 0 ? 'bg-green-500' : 'bg-blue-500';
+            return `
+                <div class="vehicle-card p-3 border border-cyan-500/20 rounded-xl flex flex-col gap-1 relative cursor-pointer active:scale-95 min-h-[70px] !overflow-visible" 
+                     onclick="openUnitControl('${v.type}')">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-[8px] font-black text-slate-500 uppercase truncate max-w-[40%]">${v.type}</span>
+                        <span class="text-[7px] font-bold uppercase text-cyan-400/40 tracking-tighter">M: ${v.inMission} / B: ${inBase}</span>
+                        <div class="w-1.5 h-1.5 rounded-full ${statusColor} shadow-[0_0_6px_currentColor]"></div>
+                    </div>
+                    
+                    <div class="flex-1 flex items-center justify-end">
+                         <span class="font-orbitron text-lg font-black text-white opacity-90">x${v.count}</span>
+                    </div>
                 </div>
             `;
-        } else {
-            html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
-            deployed.forEach(v => {
-                const inBase = v.count - v.inMission;
-                const statusColor = v.count === 0 ? 'bg-red-500 text-red-500' : (v.inMission > 0 ? 'bg-green-500 text-green-500' : 'bg-blue-500 text-blue-500');
-                const statusText = v.count === 0 ? 'Hors Service' : (v.inMission > 0 ? 'Opérationnel' : 'En Base');
-
-                // Find active indicatifs for this vehicle type
-                const activeIndicatifs = Object.values(state.movements)
-                    .filter(m => m.vehicleType === v.type && m.status === 'En cours')
-                    .map(m => m.indicatif)
-                    .join(', ');
-
-                html += `
-                    <div onclick="jumpToOpsCategory('${v.cat}')" class="bg-slate-800/40 rounded-xl p-4 border border-white/5 relative overflow-hidden cursor-pointer active:scale-95 transition-all group hover:bg-slate-800/60">
-                        <div class="category-accent" style="background-color: ${v.color}"></div>
-                        <div class="flex justify-between items-start mb-2">
-                            <div>
-                                <span class="text-[8px] font-black text-slate-500 uppercase tracking-widest">${v.cat}</span>
-                                <h3 class="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">${v.type}</h3>
-                            </div>
-                            <div class="flex flex-col items-end">
-                                <span class="mono text-lg font-black text-blue-400">x${v.count}</span>
-                                <span class="text-[7px] text-slate-600 uppercase font-black">Total</span>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2 mt-3">
-                            <span class="status-pill bg-opacity-20 ${statusColor} text-[8px]">${statusText}</span>
-                            <div class="flex gap-2">
-                                ${v.inMission > 0 ? `<span class="text-[8px] font-black text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">${v.inMission} MISSION</span>` : ''}
-                                ${inBase > 0 ? `<span class="text-[8px] font-black text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">${inBase} BASE</span>` : ''}
-                            </div>
-                        </div>
-                        <div class="mt-2 pt-2 border-t border-white/5">
-                            <span class="text-[9px] text-slate-500 mono italic line-clamp-1">
-                                ${activeIndicatifs ? `<span class="text-blue-400">Actifs:</span> ${activeIndicatifs}` : (v.crew || 'Sans pilote attitré')}
-                            </span>
-                        </div>
-                    </div>
-                `;
-            });
-            html += `</div>`;
-        }
-        container.innerHTML = html;
+        }).join('');
     }
 
-    window.jumpToOpsCategory = (cat) => {
-        state.currentTab = 'ops';
-        state.expandedCategory = cat;
-        switchTab('ops');
+    window.openUnitControl = (type) => {
+        const v = state.fleet.find(x => x.type === type);
+        if (!v) return;
+
+        if (v.count === 1) {
+            openUnitModal(`${v.id}_0`);
+        } else {
+            // Show selection modal
+            const overlay = document.getElementById('modal-overlay');
+            const content = document.getElementById('modal-content');
+
+            content.innerHTML = `
+                <div class="p-6">
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <div class="text-[9px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1">Sélection d'Unité</div>
+                            <h3 class="text-xl font-black text-white uppercase font-orbitron">${v.type} <span class="text-cyan-400 opacity-50 text-sm">x${v.count}</span></h3>
+                        </div>
+                        <button onclick="closeModal()" class="text-slate-500 hover:text-white transition-all">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                        ${Array.from({ length: v.count }).map((_, i) => {
+                const unitKey = `${v.id}_${i}`;
+                const isMission = state.movements[unitKey]?.status === 'En cours';
+                return `
+                                <button onclick="openUnitModal('${unitKey}')" 
+                                        class="p-4 bg-black/40 border border-cyan-500/10 rounded-lg flex justify-between items-center hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group">
+                                    <div class="flex flex-col items-start">
+                                        <span class="text-[10px] font-black text-white uppercase group-hover:text-cyan-400">UNITÉ ${i + 1}</span>
+                                        <span class="text-[8px] text-slate-500 uppercase font-bold">${state.movements[unitKey]?.indicatif || `${v.type.split(' ')[0]}-${i + 1}`}</span>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <div class="flex flex-col items-end">
+                                            <span class="text-[8px] font-black ${isMission ? 'text-green-500' : 'text-blue-500'} uppercase">
+                                                ${isMission ? 'EN MISSION' : 'EN BASE'}
+                                            </span>
+                                            <span class="text-[7px] text-slate-600 font-bold">${state.movements[unitKey]?.mission || 'RAS'}</span>
+                                        </div>
+                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-700 group-hover:text-cyan-400"></i>
+                                    </div>
+                                </button>
+                            `;
+            }).join('')}
+                    </div>
+                </div>
+            `;
+
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+            lucide.createIcons();
+        }
     };
 
-    function renderFleet(container) {
-        let html = `
-            <div class="mb-6">
-                <h2 class="text-xl font-black uppercase tracking-tight">Catalogue Flotte</h2>
-                <p class="text-[9px] text-slate-500 uppercase tracking-widest">Déployez et gérez les unités disponibles</p>
+    function renderFleetCatalogue() {
+        const container = document.getElementById('main-content');
+        container.innerHTML = `
+            <div class="h-full flex flex-col animate-in fade-in zoom-in duration-300">
+                <div class="mb-4 flex justify-between items-center">
+                    <h2 class="text-sm font-black uppercase tracking-widest text-cyan-400">Catalogue de Déploiement</h2>
+                    <span class="text-[10px] text-slate-500 uppercase">${state.fleet.length} MODÈLES DISPONIBLES</span>
+                </div>
+                <div class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 p-1 custom-scrollbar">
+                    ${state.fleet.map(v => `
+                        <div onclick="deployVehicle(${v.id})" class="hud-panel p-3 border border-cyan-500/20 rounded-xl cursor-pointer group hover:border-cyan-400 transition-all flex flex-col gap-1 min-h-[70px] sm:min-h-0 !overflow-visible">
+                            <div class="flex justify-between items-center mb-0.5">
+                                <span class="text-[8px] sm:text-[9px] px-1.5 py-0.5 border border-cyan-500/30 text-cyan-500 rounded uppercase font-black tracking-tighter bg-black/40">${v.grade}</span>
+                                <span class="text-[7px] font-black text-slate-500 uppercase opacity-60 px-1 truncate max-w-[40%]">${v.cat}</span>
+                                <div class="flex flex-col items-end">
+                                    <span class="text-[8px] sm:text-[9px] font-black font-orbitron text-cyan-400 shadow-[0_0_10px_rgba(0,242,255,0.2)] whitespace-nowrap">${v.cost} PTS</span>
+                                    <span class="text-[7px] font-black text-white/40 mt-0.5">${v.count > 0 ? `x${v.count}` : ''}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="flex-1 flex items-center justify-center text-center">
+                                <h3 class="font-black text-[10px] sm:text-[11px] text-white uppercase leading-tight group-hover:text-cyan-400 tracking-tight break-words w-full">${v.type}</h3>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         `;
+    }
 
-        state.fleet.forEach(v => {
-            html += `
-                <div onclick="deployVehicle(${v.id})" class="bg-slate-900 border border-white/5 rounded-xl overflow-hidden relative cursor-pointer active:scale-95 transition-all group hover:border-blue-500/30">
-                    <div class="category-accent" style="background-color: ${v.color}"></div>
-                    <div class="p-4">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <span class="px-1.5 py-0.5 bg-slate-800 text-[8px] font-black rounded text-slate-400 uppercase mb-1 inline-block">${v.grade}</span>
-                                <h3 class="font-bold text-sm leading-tight group-hover:text-blue-400 transition-colors">${v.type}</h3>
-                            </div>
-                            <div class="flex flex-col items-end">
-                                <span class="mono text-xs font-bold text-slate-500">${v.cost} pts</span>
-                                ${v.count > 0 ? `<span class="mt-1 text-[9px] font-black text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20 animate-pulse-slow">x${v.count}</span>` : ''}
-                            </div>
+    function renderServiceControl() {
+        const content = document.getElementById('main-content');
+        content.innerHTML = `
+            <div id="service-view" class="h-full animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col items-center justify-center p-4">
+                <div class="w-full max-w-xl">
+                    <section class="hud-panel p-8 border border-cyan-500/40 rounded-xl bg-black/60 flex flex-col items-center justify-center text-center space-y-6 shadow-[0_0_50px_rgba(0,242,255,0.05)]">
+                        <div class="w-20 h-20 rounded-full border-2 border-cyan-500/30 flex items-center justify-center bg-cyan-500/5 shadow-[0_0_20px_rgba(0,242,255,0.1)]">
+                            <i data-lucide="shield-check" class="w-10 h-10 text-cyan-400 ${state.isShiftActive ? 'status-blink' : ''}"></i>
                         </div>
                         
-                        <div class="mt-6 flex items-center justify-between">
-                            <span class="text-[7px] text-slate-600 uppercase font-black tracking-[0.2em]">Cliquer pour ajouter</span>
-                            <div class="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/20 group-hover:bg-blue-500 group-hover:text-white transition-all">
-                                <i data-lucide="plus" class="w-3 h-3"></i>
+                        <div class="space-y-2">
+                            <h2 class="text-xl font-black uppercase tracking-[0.2em] text-white">Opérateur en Service</h2>
+                            <p class="text-[10px] text-slate-500 uppercase font-black tracking-widest">Contrôle Tactique de la Base FOF</p>
+                        </div>
+
+                        <div class="w-full max-w-xs space-y-4">
+                            <div class="space-y-1 text-left">
+                                <label class="text-[9px] uppercase font-black text-cyan-400/70 tracking-tighter">Identifiant Opérateur</label>
+                                <input type="text" id="sl-name-input" value="${state.slName === 'Non identifié' ? '' : state.slName}" 
+                                    class="w-full bg-slate-900/60 border border-cyan-500/30 rounded p-3 text-white font-orbitron text-sm focus:border-cyan-400 focus:outline-none transition-all uppercase"
+                                    ${state.isShiftActive ? 'disabled' : ''}
+                                    placeholder="ENTREZ VOTRE NOM">
                             </div>
+                            
+                            <button id="shift-toggle-btn" 
+                                onclick="toggleShift()" 
+                                class="w-full ${state.isShiftActive ? 'bg-red-500/20 border-red-500/50 hover:bg-red-500/30 text-red-400' : 'bg-cyan-500/20 border-cyan-500/50 hover:bg-cyan-500/30 text-cyan-400'} border p-4 rounded uppercase font-black tracking-widest text-xs transition-all flex items-center justify-center gap-3">
+                                <i data-lucide="${state.isShiftActive ? 'power-off' : 'power'}" class="w-4 h-4"></i>
+                                ${state.isShiftActive ? 'Déconnexion Système' : 'Initialiser Connexion'}
+                            </button>
                         </div>
-                    </div>
-                </div>
-        `;
-        });
-
-        html += `</div>`;
-        container.innerHTML = html;
-    }
-
-    function renderOps(container) {
-        const deployedUnits = state.fleet.filter(v => v.count > 0);
-        const categories = [...new Set(deployedUnits.map(v => v.cat))];
-
-        let html = `
-            <div class="mb-6">
-                <h2 class="text-xl font-black uppercase tracking-tight">Opérations Tactiques</h2>
-                <p class="text-[9px] text-slate-500 uppercase tracking-widest italic">${deployedUnits.length} Modèles déployés</p>
-            </div>
-        `;
-
-        if (categories.length === 0) {
-            html += `<div class="py-20 text-center text-slate-600 text-[10px] uppercase font-bold tracking-widest italic tracking-tighter">AUCUN VÉHICULE EN MISSION</div>`;
-        } else {
-            html += `<div class="space-y-3">`;
-            categories.forEach(cat => {
-                const isCatExpanded = state.expandedCategory === cat;
-                const catVehicles = deployedUnits.filter(v => v.cat === cat);
-                const totalDeployed = catVehicles.reduce((a, b) => a + b.count, 0);
-                const totalInMission = catVehicles.reduce((a, b) => a + b.inMission, 0);
-                const totalDestroyed = catVehicles.reduce((a, b) => a + (b.destroyed || 0), 0);
-
-                html += `
-                    <!-- Level 1: Category -->
-                    <div class="bg-slate-900/60 border border-white/5 rounded-2xl overflow-hidden shadow-lg transition-all">
-                        <div onclick="toggleCategoryExpand('${cat}')" class="p-4 flex justify-between items-center cursor-pointer active:bg-slate-800 transition-colors">
-                            <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-xl flex items-center justify-center border border-white/10" style="background-color: ${getCategoryColor(cat)}20">
-                                    <i data-lucide="layers" class="w-4 h-4" style="color: ${getCategoryColor(cat)}"></i>
-                                </div>
-                                <div>
-                                    <h4 class="font-black text-xs text-white uppercase tracking-tighter">${cat}</h4>
-                                    <p class="text-[8px] text-slate-500 font-bold uppercase tracking-widest">
-                                        <span class="text-blue-400">${totalDeployed}</span> DÉPLOYÉ(S) | 
-                                        <span class="text-green-400">${totalInMission}</span> MISSION | 
-                                        <span class="text-red-500">${totalDestroyed}</span> PERTE(S)
-                                    </p>
-                                </div>
+                        
+                        ${state.isShiftActive ? `
+                            <div class="pt-4 border-t border-cyan-500/20 w-full">
+                                <span class="text-[9px] text-slate-500 uppercase font-bold mb-2 block">Durée de la session</span>
+                                <div id="shift-timer" class="text-2xl font-black font-orbitron text-cyan-400">00:00:00</div>
                             </div>
-                            <i data-lucide="${isCatExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4 text-slate-600"></i>
-                        </div>
-
-                        ${isCatExpanded ? `
-                        <div class="px-3 pb-3 space-y-2 animate-slide-up">
-                            ${catVehicles.map(v => {
-                    const isVehExpanded = state.expandedVehicleId === v.id;
-                    return `
-                                <!-- Level 2: Vehicle Type -->
-                                <div class="bg-slate-800/80 border border-white/5 rounded-xl overflow-hidden shadow-md">
-                                    <div onclick="toggleVehicleExpand(${v.id})" class="p-3 flex justify-between items-center cursor-pointer active:bg-slate-700/50">
-                                        <div class="flex items-center gap-2">
-                                            <div class="w-1 h-1 rounded-full animate-pulse" style="background-color: ${v.color}"></div>
-                                            <h5 class="font-black text-[10px] text-slate-300 uppercase tracking-tight">
-                                                ${v.type} 
-                                                <span class="text-blue-500 ml-1">x${v.count}</span>
-                                                ${v.inMission > 0 ? `<span class="text-green-500 ml-1">(${v.inMission} en mission)</span>` : ''}
-                                            </h5>
-                                        </div>
-                                        <i data-lucide="${isVehExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5 text-slate-500"></i>
-                                    </div>
-
-                                    ${isVehExpanded ? `
-                                    <!-- Level 3: Unit Grid -->
-                                    <div class="p-3 bg-slate-900/40 border-t border-white/5">
-                                        <div class="grid grid-cols-4 sm:grid-cols-5 gap-2">
-                                             ${Array.from({ length: v.count }).map((_, i) => {
-                        const unitKey = `${v.id}_${i}`;
-                        const m = state.movements[unitKey];
-                        // Bleu si en base (pas de mission), Vert si en mission active
-                        const hasActiveMission = m && m.mission && m.status === 'En cours';
-                        const statusColor = hasActiveMission ? 'bg-green-500' : 'bg-blue-500';
-
-                        return `
-                                                    <button onclick="openUnitModal('${unitKey}')" 
-                                                            class="aspect-square bg-slate-800 rounded-lg border border-white/5 flex flex-col items-center justify-center relative active:scale-90 transition-all shadow-inner">
-                                                        <span class="text-[9px] font-black text-white/50 uppercase italic">V.${i + 1}</span>
-                                                        <div class="w-1.5 h-1.5 rounded-full ${statusColor} mt-1 shadow-lg"></div>
-                                                    </button>
-                                                `;
-                    }).join('')}
-                                        </div>
-                                    </div>
-                                    ` : ''}
-                                </div>
-                                `;
-                }).join('')}
-                        </div>
                         ` : ''}
-                    </div>
-                `;
-            });
-            html += `</div>`;
-        }
-        container.innerHTML = html;
-
-        if (state.editingUnitKey) renderUnitModal(container);
-    }
-
-
-    window.toggleCategoryExpand = (cat) => {
-        state.expandedCategory = state.expandedCategory === cat ? null : cat;
-        render();
-    };
-
-    window.toggleVehicleExpand = (id) => {
-        state.expandedVehicleId = state.expandedVehicleId === id ? null : id;
-        render();
-    };
-
-    window.openUnitModal = (unitKey) => {
-        state.editingUnitKey = unitKey;
-        render();
-    };
-
-    window.closeUnitModal = () => {
-        state.editingUnitKey = null;
-        render();
-    };
-
-    function renderService(container) {
-        container.innerHTML = `
-            <div class="mb-6">
-                <h2 class="text-xl font-black uppercase tracking-tight italic">Service Logistique</h2>
-                <p class="text-[9px] text-slate-500 uppercase tracking-widest mt-1">Prise de poste et gestion de session</p>
-            </div>
-
-            <div class="space-y-6">
-                <!-- SHIFT CARD -->
-                <div class="bg-slate-900 border border-white/5 rounded-2xl p-6 relative overflow-hidden shadow-2xl">
-                    <div class="absolute top-0 left-0 w-1 h-full ${state.isShiftActive ? 'bg-green-500' : 'bg-red-500'}"></div>
-                    
-                    <div class="flex items-center gap-4 mb-8">
-                        <div class="w-12 h-12 rounded-2xl ${state.isShiftActive ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'} flex items-center justify-center border border-white/5">
-                            <i data-lucide="${state.isShiftActive ? 'user-check' : 'user-x'}" class="w-6 h-6"></i>
-                        </div>
-                        <div>
-                            <span class="text-[8px] text-slate-500 uppercase font-black tracking-widest block mb-1">Statut Actuel</span>
-                            <h3 class="font-black text-lg uppercase tracking-tighter ${state.isShiftActive ? 'text-green-500' : 'text-red-500'}">
-                                ${state.isShiftActive ? 'En Service' : 'Hors Service'}
-                            </h3>
-                        </div>
-                    </div>
-
-                    <div class="bg-slate-950/50 rounded-2xl p-4 border border-white/5 mb-6">
-                        <label class="text-[8px] text-slate-600 uppercase font-black block mb-2 tracking-[0.2em]">Identifiant SL Logi</label>
-                        <input type="text" id="sl-name-input" value="${state.slName === 'Non identifié' ? '' : state.slName}" 
-                               placeholder="ENTREZ VOTRE NOM..."
-                               class="w-full bg-transparent text-white text-base font-black outline-none placeholder:text-slate-800 uppercase">
-                    </div>
-
-                    <button onclick="toggleShift()"
-                        class="w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs transition-all active:scale-95 shadow-xl ${state.isShiftActive ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/40' : 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/40'}">
-                        ${state.isShiftActive ? '🔴 Terminer mon service' : '🟢 Démarrer mon service'}
-                    </button>
-                    
-                    ${state.isShiftActive && state.startTime ? `
-                    <div class="mt-6 pt-6 border-t border-white/5 flex justify-between items-center">
-                        <span class="text-[8px] text-slate-500 uppercase font-black tracking-widest">Début de session</span>
-                        <span class="mono text-[10px] text-slate-400 font-bold">${state.startTime.toLocaleTimeString('fr-FR')}</span>
-                    </div>
-                    ` : ''}
-                </div>
-
-                <div class="p-4 bg-blue-500/5 rounded-2xl border border-blue-500/10">
-                    <p class="text-[9px] text-blue-400/80 leading-relaxed italic text-center">
-                        Note: La gestion des effectifs et du supply se fait directement en cliquant sur les statistiques dans l'en-tête de l'application.
-                    </p>
+                    </section>
                 </div>
             </div>
         `;
-    }
-
-    // --- CORE ACTIONS ---
-    window.deployVehicle = (id) => {
-        const v = state.fleet.find(x => x.id === id);
-        if (v) {
-            v.count++;
-            state.supply -= v.cost; // Déduction directe du supply
-            updateVehicleStatusLocally(v);
-            render();
-            syncVehicle(v);
-            saveAndSyncGlobals(); // Sync le nouveau supply au backend
-
-            // Notification visuelle discrète
-            const statsContainer = document.querySelector('#stat-active')?.parentElement;
-            if (statsContainer) {
-                statsContainer.classList.add('scale-110', 'brightness-125');
-                setTimeout(() => statsContainer.classList.remove('scale-110', 'brightness-125'), 300);
-            }
-        }
-    };
-
-    window.changeCount = (id, delta) => {
-        const v = state.fleet.find(x => x.id === id);
-        if (v) {
-            v.count = Math.max(0, v.count + delta);
-            // Limit inMission by new count
-            if (v.inMission > v.count) v.inMission = v.count;
-
-            updateVehicleStatusLocally(v);
-            render();
-            syncVehicle(v);
-        }
-    };
-
-    function updateVehicleStatusLocally(v) {
-        if (v.count === 0) {
-            v.status = 'Pas déployé';
-        } else if (v.inMission > 0) {
-            v.status = 'Opérationnel';
-        } else {
-            v.status = 'En Base';
-        }
-    }
-
-    window.updateCrew = (id, name) => {
-        const v = state.fleet.find(x => x.id === id);
-        if (v) {
-            v.crew = name;
-            syncVehicle(v);
-        }
-    };
-
-    window.updateMovementField = (id, field, value) => {
-        if (!state.movements[id]) {
-            state.movements[id] = { indicatif: '', mission: '', status: 'En cours', condition: '100%' };
-        }
-        state.movements[id][field] = value;
-        // Pas de render() ici par défaut pour éviter de couper la saisie des inputs, 
-        // les boutons eux appellent render() explicitement.
-    };
-
-    window.syncMovement = (unitKey) => {
-        const vid = parseInt(unitKey.split('_')[0]);
-        const v = state.fleet.find(x => x.id === vid);
-        const m = state.movements[unitKey];
-        if (!v || !m) return;
-
-        if (!m.indicatif) {
-            alert("Veuillez saisir un Indicatif avant le départ.");
-            return;
-        }
-
-        const isFinished = m.status === 'Terminé' || m.status === 'Échec';
-        const isNewMission = !m.isLogged;
-        const isHS = m.condition === 'HS';
-
-        // Si c'est une validation de mission déjà en cours (sans changement de statut final et pas HS),
-        // on évite de renvoyer un log dans le Sheet pour éviter les doublons.
-        if (!isNewMission && !isFinished && !isHS) {
-            console.log("[SYNC] Mission Validation - Local only");
-            render();
-            return;
-        }
-
-        // Logique Mission
-        if (isNewMission && !isFinished && !isHS) {
-            // Départ mission
-            v.inMission = Math.min(v.count, (v.inMission || 0) + 1);
-        } else if ((isFinished || isHS) && m.isLogged) {
-            // Fin de mission (ou destruction en mission)
-            v.inMission = Math.max(0, (v.inMission || 0) - 1);
-        }
-
-        // Logique Destruction (HS)
-        if (isHS) {
-            v.destroyed = (v.destroyed || 0) + 1;
-            v.count = Math.max(0, v.count - 1);
-            delete state.movements[unitKey];
-            // Nettoyage de l'ID si c'était le dernier du type
-            if (v.count === 0) {
-                state.movements = Object.fromEntries(
-                    Object.entries(state.movements).filter(([key]) => !key.startsWith(`${vid}_`))
-                );
-            }
-        }
-
-        // Marquer comme loggué
-        m.isLogged = true;
-
-        // Mise à jour Statut Auto
-        if (v.count === 0) v.status = "Pas déployé";
-        else if (v.inMission > 0) v.status = "Opérationnel";
-        else v.status = "En Base";
-
-        // Sync vers GSheet (Véhicule)
-        syncVehicle(v);
-
-        // Sync vers GSheet (Log périodique / Équipage)
-        fetch(API_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'log_equipage',
-                data: {
-                    vehicleType: v.type,
-                    idIndicatif: m.indicatif,
-                    crew: m.crew || v.crew || "Personnel",
-                    mission: m.mission,
-                    status: isHS ? "VÉHICULE DÉTRUIT" : m.status,
-                    condition: "'" + m.condition, // Force format texte Google Sheets
-                    remark: m.remark || ""
-                }
-            })
-        }).then(() => {
-            if (isHS) showSuccessModal(v.type, m.indicatif, true);
-            else if (isFinished) {
-                delete state.movements[unitKey];
-                showSuccessModal(v.type, m.indicatif, true);
-            } else {
-                showSuccessModal(v.type, m.indicatif, false);
-            }
-            render();
-        }).catch(err => console.error("Sync Error", err));
-    }
-
-    window.updateStatus = (id, status) => {
-        const v = state.fleet.find(x => x.id === id);
-        if (v) {
-            if (status === 'Opérationnel') {
-                // Déjà géré par le bouton ? Si on force le statut global
-                v.inMission = v.count;
-            } else if (status === 'En Base' || status === 'Pas déployé') {
-                v.inMission = 0;
-            } else if (status === 'Détruit') {
-                v.destroyed = (v.destroyed || 0) + v.count;
-                v.count = 0;
-                v.inMission = 0;
-            }
-            updateVehicleStatusLocally(v);
-            render();
-            syncVehicle(v);
-        }
-    };
-
-    window.reportLoss = (id) => {
-        if (!confirm("Confirmer la perte (destruction) d'une unité ?")) return;
-        const v = state.fleet.find(x => x.id === id);
-        if (v && v.count > 0) {
-            v.destroyed = (v.destroyed || 0) + 1;
-            v.count--;
-            // On ne rend pas les points de supply car le véhicule est détruit
-            updateVehicleStatusLocally(v);
-            render();
-            syncVehicle(v);
-        }
-    };
-
-    window.cancelDeployment = (id) => {
-        if (!confirm("Annuler le déploiement ? Le supply sera remboursé.")) return;
-        const v = state.fleet.find(x => x.id === id);
-        if (v && v.count > 0) {
-            v.count--;
-            state.supply += v.cost; // Remboursement du supply
-            updateVehicleStatusLocally(v);
-            render();
-            syncVehicle(v);
-            saveAndSyncGlobals();
-            closeUnitModal();
-        }
-    };
-
-    function calculateRemainingSupply() {
-        return state.supply; // Le supply est maintenant géré comme un inventaire direct
-    }
-
-    function updateGlobalStats() {
-        const remaining = calculateRemainingSupply();
-        document.getElementById('stat-supply').innerText = remaining;
-        document.getElementById('stat-active').innerText = state.fleet.reduce((a, b) => a + (b.count || 0), 0);
-        document.getElementById('stat-lost').innerText = state.fleet.reduce((a, b) => a + (b.destroyed || 0), 0);
-
-        // Dynamic Medic calculation from EVASAN units
-        const evasanCount = state.fleet.reduce((total, v) => {
-            if (v.type.toUpperCase().includes('EVASAN') || v.type.toUpperCase().includes('AMBULANCE')) {
-                return total + (v.count || 0);
-            }
-            return total;
-        }, 0);
-
-        // Update display
-        const personnelEl = document.getElementById('stat-personnel');
-        const medicsEl = document.getElementById('stat-medics');
-        const evasanEl = document.getElementById('stat-evasan');
-
-        if (personnelEl) personnelEl.innerText = state.personnel;
-        if (medicsEl) medicsEl.innerText = state.medics;
-        if (evasanEl) evasanEl.innerText = evasanCount;
-
-        // Header background status
-        const slStatus = document.getElementById('sl-status');
-        if (state.isShiftActive) {
-            slStatus.innerText = `En Service(${state.slName})`;
-            slStatus.classList.remove('text-slate-500');
-            slStatus.classList.add('text-green-500');
-        } else {
-            slStatus.innerText = "OFFLINE";
-            slStatus.classList.add('text-slate-500');
-            slStatus.classList.remove('text-green-500');
-        }
-    }
-
-    window.toggleShift = () => {
-        const nameInput = document.getElementById('sl-name-input');
-        if (nameInput) state.slName = nameInput.value || 'Non identifié';
-
-        if (!state.isShiftActive) {
-            showStartShiftModal();
-        } else {
-            showStopShiftModal();
-        }
-    };
-
-    function showModal(contentHtml) {
-        const overlay = document.getElementById('modal-overlay');
-        const content = document.getElementById('modal-content');
-        content.innerHTML = contentHtml;
-        overlay.classList.remove('hidden');
-        overlay.classList.add('flex');
-    }
-
-    window.closeModal = () => {
-        const overlay = document.getElementById('modal-overlay');
-        overlay.classList.add('hidden');
-        overlay.classList.remove('flex');
-    };
-
-    window.showSuccessModal = (vehicleType, indicatif, isFinished) => {
-        const overlay = document.getElementById('modal-overlay');
-        const unitKey = state.editingUnitKey;
-        const m = unitKey ? state.movements[unitKey] : null;
-        const isHS = m && m.condition === 'HS';
-
-        const title = isHS ? "VÉHICULE DÉTRUIT" : (isFinished ? "MISSION TERMINÉE" : "MISSION ENREGISTRÉE");
-        const subtitle = isHS ? "L'UNITÉ A ÉTÉ RETIRÉE DU SERVICE" : (isFinished ? "L'UNITÉ EST DE RETOUR À LA BASE" : "LES DONNÉES SONT SYNCHRONISÉES");
-        const icon = isHS ? 'skull' : (isFinished ? 'home' : 'check-circle');
-        const color = isHS ? 'text-red-500' : (isFinished ? 'text-blue-500' : 'text-green-500');
-
-        showModal(`
-            <div class="p-8 text-center">
-                <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center ${color} mx-auto mb-6 border border-white/5 shadow-xl">
-                    <i data-lucide="${icon}" class="w-10 h-10"></i>
-                </div>
-                <h3 class="text-xl font-black text-white uppercase tracking-tighter mb-2">${title}</h3>
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-8 italic">${subtitle}</p>
-                
-                <div class="bg-slate-900/50 rounded-2xl p-4 border border-white/5 mb-8 space-y-3 text-left">
-                    <div>
-                        <span class="text-[8px] text-slate-500 uppercase font-black block tracking-widest">Unité Tactique</span>
-                        <span class="text-sm font-bold text-white">${indicatif}</span>
-                    </div>
-                    <div>
-                        <span class="text-[8px] text-slate-500 uppercase font-black block tracking-widest">Modèle de Véhicule</span>
-                        <span class="text-sm font-bold text-indigo-400">${vehicleType}</span>
-                    </div>
-                </div>
-
-                <button onclick="closeModal()" class="w-full py-4 bg-indigo-600 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-indigo-900/40 hover:bg-indigo-500 transition-all active:scale-95">
-                    Terminer
-                </button>
-            </div>
-        `);
         lucide.createIcons();
     }
 
-    function showStartShiftModal() {
-        showModal(`
-            <div class="p-6">
-                <div class="flex items-center gap-3 mb-4">
-                    <div class="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center text-green-500">
-                        <i data-lucide="check-square" class="w-6 h-6"></i>
-                    </div>
-                    <h3 class="font-black uppercase tracking-tight text-white italic">Début de Service</h3>
-                </div>
-                <div class="space-y-4 text-slate-300 text-sm leading-relaxed mb-6">
-                    <p class="text-xs text-slate-500 uppercase font-black tracking-widest">Instructions Tactiques</p>
-                    <p>Bonjour <span class="text-white font-bold">${state.slName}</span>,</p>
-                    <ul class="space-y-2 text-xs">
-                        <li class="flex gap-2 items-start"><span class="text-green-500">■</span> Faire l'inventaire de toute la flotte</li>
-                        <li class="flex gap-2 items-start"><span class="text-green-500">■</span> Vérifier l'état de chaque véhicule</li>
-                        <li class="flex gap-2 items-start"><span class="text-green-500">■</span> Vérifier le supply disponible en base</li>
-                        <li class="flex gap-2 items-start"><span class="text-green-500">■</span> Mettre à jour l'application régulièrement</li>
-                    </ul>
-                </div>
-                <button onclick="confirmStartShift()" class="w-full py-4 bg-green-600 text-white font-black uppercase tracking-tighter rounded-xl shadow-lg shadow-green-900/40 hover:bg-green-500 transition-all active:scale-95">
-                    Démarrer le service
-                </button>
-            </div>
-            `);
-        lucide.createIcons();
-    }
-
-    function showStopShiftModal() {
-        showModal(`
-            <div class="p-6 text-center">
-                <div class="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-red-500 mx-auto mb-4">
-                    <i data-lucide="alert-octagon" class="w-8 h-8"></i>
-                </div>
-                <h3 class="font-black uppercase tracking-tight text-white text-lg mb-2">Fin de Service</h3>
-                <p class="text-slate-400 text-sm mb-8">Avez-vous mis à jour l'application, la flotte et le supply pour le prochain SL ?</p>
-                
-                <div class="grid grid-cols-2 gap-3">
-                    <button onclick="closeModal()" class="py-4 bg-slate-800 text-slate-400 font-black uppercase tracking-tighter rounded-xl hover:bg-slate-700 hover:text-white transition-all">
-                        Non
-                    </button>
-                    <button onclick="confirmStopShift()" class="py-4 bg-red-600 text-white font-black uppercase tracking-tighter rounded-xl shadow-lg shadow-red-900/40 hover:bg-red-500 transition-all active:scale-95">
-                        Oui
-                    </button>
-                </div>
-            </div>
-            `);
-        lucide.createIcons();
-    }
-
-    window.confirmStartShift = () => {
-        closeModal();
-        const now = new Date();
-        const formattedDate = now.toLocaleDateString('fr-FR');
-        const formattedTime = now.toLocaleTimeString('fr-FR');
-        const sheetDateTime = `${formattedDate} ${formattedTime}`;
-
-        state.isShiftActive = true;
-        state.startTime = now;
-        syncShiftAction('shift_start', {
-            pseudo: state.slName,
-            startTime: sheetDateTime
-        });
-
-        saveAndSyncGlobals();
-    };
-
-    window.confirmStopShift = () => {
-        closeModal();
-        const now = new Date();
-        const formattedDate = now.toLocaleDateString('fr-FR');
-        const formattedTime = now.toLocaleTimeString('fr-FR');
-        const sheetDateTime = `${formattedDate} ${formattedTime}`;
-
-        // Safety check for startTime
-        let startTimeStr = 'INCONNU';
-        if (state.startTime instanceof Date && !isNaN(state.startTime)) {
-            startTimeStr = `${state.startTime.toLocaleDateString('fr-FR')} ${state.startTime.toLocaleTimeString('fr-FR')}`;
-        }
-
-        const totalDeployed = state.fleet.reduce((a, b) => a + (b.count || 0), 0);
-        const totalDestroyed = state.fleet.reduce((a, b) => a + (b.destroyed || 0), 0);
-
-        syncShiftAction('shift_stop', {
-            pseudo: state.slName,
-            startTime: startTimeStr, // Already FR formatted
-            endTime: sheetDateTime,
-            totalDeployed: totalDeployed,
-            totalDestroyed: totalDestroyed,
-            personnel: state.personnel
-        });
-
-        state.isShiftActive = false;
-        state.startTime = null;
-
-        saveAndSyncGlobals();
-    };
-
-    window.adjustPersonnel = (delta) => {
-        state.personnel = Math.max(0, state.personnel + delta);
-        saveAndSyncGlobals();
-    };
-
-    window.adjustMedics = (delta) => {
-        state.medics = Math.max(0, state.medics + delta);
-        saveAndSyncGlobals();
-    };
-
-    function saveAndSyncGlobals() {
-        localStorage.setItem('fof_logi_settings', JSON.stringify({
-            slName: state.slName,
-            shiftActive: state.isShiftActive,
-            shiftStartTime: state.startTime ? state.startTime.toISOString() : null,
-            initialSupply: state.supply,
-            personnel: state.personnel,
-            medics: state.medics
-        }));
-        render();
-        syncGlobalSettings();
-    }
-
-    window.openQuickEdit = (type) => {
-        let label = '';
-        let value = 0;
-        let colorClass = '';
-
-        if (type === 'supply') {
-            label = 'Supply Initial Base';
-            value = state.supply;
-            colorClass = 'text-blue-400';
-        } else if (type === 'personnel') {
-            label = 'Effectifs Logistique';
-            value = state.personnel;
-            colorClass = 'text-orange-500';
-        } else if (type === 'medics') {
-            label = 'Unités V2 / EVASAN';
-            value = state.medics;
-            colorClass = 'text-pink-500';
-        }
-
-        showModal(`
-            <div class="p-6">
-                <div class="flex items-center gap-3 mb-6">
-                    <div class="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center border border-white/5">
-                        <i data-lucide="edit-3" class="w-5 h-5 ${colorClass}"></i>
-                    </div>
-                    <div>
-                        <h3 class="font-black uppercase tracking-tight text-white italic">Mise à jour Rapide</h3>
-                        <p class="text-[8px] text-slate-500 font-bold uppercase tracking-widest">${label}</p>
-                    </div>
-                </div>
-
-                <div class="bg-slate-900/50 rounded-2xl p-4 border border-white/5 mb-6">
-                    <input type="number" id="quick-edit-input" value="${value}" 
-                           class="bg-transparent text-2xl font-black text-center w-full outline-none ${colorClass} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                </div>
-
-                <div class="grid grid-cols-2 gap-3">
-                    <button onclick="closeModal()" class="py-4 bg-slate-800 text-slate-400 font-black uppercase tracking-tighter rounded-xl hover:bg-slate-700 hover:text-white transition-all">
-                        Annuler
-                    </button>
-                    <button onclick="confirmQuickEdit('${type}')" class="py-4 bg-indigo-600 text-white font-black uppercase tracking-tighter rounded-xl shadow-lg shadow-indigo-900/40 hover:bg-indigo-500 transition-all active:scale-95">
-                        Valider
-                    </button>
-                </div>
-            </div>
-        `);
-        lucide.createIcons();
-        setTimeout(() => document.getElementById('quick-edit-input').select(), 100);
-    };
-
-    window.confirmQuickEdit = (type) => {
-        const input = document.getElementById('quick-edit-input');
-        const newValue = parseInt(input.value);
-        if (isNaN(newValue)) return;
-
-        if (type === 'supply') state.supply = newValue;
-        else if (type === 'personnel') state.personnel = newValue;
-        else if (type === 'medics') state.medics = newValue;
-
-        closeModal();
-        saveAndSyncGlobals();
-    };
-
-    window.adjustSupplyLimit = (val) => {
-        state.supply += val;
-        saveAndSyncGlobals();
-    };
-
-    window.resetAll = () => {
-        if (!confirm("Effacer les données locales et recharger ?")) return;
-        localStorage.removeItem('fof_logi_settings');
-        location.reload();
-    };
-
-    // --- SYNC ENGINE ---
-    function syncGlobalSettings() {
-        console.log(`[SYNC] Globals: Personnel: ${state.personnel}, Medics: ${state.medics}, Supply: ${state.supply} `);
-        fetch(API_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'sync_globals',
-                data: {
-                    supply: state.supply,
-                    personnel: state.personnel,
-                    medics: state.medics
-                }
-            })
-        }).catch(err => console.error("Global Sync Error", err));
-    }
-    function syncVehicle(v) {
-        console.log(`[SYNC] ${v.type} | Depl: ${v.count}, Miss: ${v.inMission} `);
-        fetch(API_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: 'update',
-                vehicle: {
-                    id: v.id,
-                    status: v.status,
-                    deployed: v.count,
-                    inMission: v.inMission,
-                    crew: v.crew
-                }
-            })
-        }).catch(err => console.error("Sync Error", err));
-    }
-
-    function syncShiftAction(action, data) {
-        console.log(`[SHIFT] ${action} `, data);
-        state.isSyncing = true;
-        const syncBtn = document.getElementById('sync-btn');
-        if (syncBtn) syncBtn.classList.add('spin');
-
-        fetch(API_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({
-                action: action,
-                data: data
-            })
-        })
-            .then(() => {
-                state.isSyncing = false;
-                if (syncBtn) syncBtn.classList.remove('spin');
-                // Force a refresh to see the new state globally
-                setTimeout(() => init(true), 1000);
-            })
-            .catch(err => {
-                state.isSyncing = false;
-                if (syncBtn) syncBtn.classList.remove('spin');
-                console.error("Shift Sync Error", err);
-            });
-    }
-
-    // --- TIMER ---
-    function startTimer() {
+    // --- UTILITIES ---
+    function startClock() {
         setInterval(() => {
-            const timerEl = document.getElementById('shift-timer');
-            if (state.isShiftActive && state.startTime && timerEl) {
-                const diff = new Date() - state.startTime;
+            const now = new Date();
+
+            // Real-time Clock
+            const clock = document.getElementById('real-time-clock');
+            if (clock) {
+                clock.innerText = now.toLocaleTimeString('fr-FR');
+            }
+
+            // Header Shift Duration
+            const durationTimer = document.getElementById('shift-duration-timer');
+            if (state.isShiftActive && state.startTime && durationTimer) {
+                const diff = Math.max(0, now - state.startTime);
                 const h = Math.floor(diff / 3600000).toString().padStart(2, '0');
                 const m = Math.floor((diff % 3600000) / 60000).toString().padStart(2, '0');
                 const s = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
-                timerEl.innerText = `${h}:${m}:${s} `;
-            } else if (timerEl) {
-                timerEl.innerText = "00:00:00";
+                durationTimer.innerText = `${h}:${m}:${s}`;
             }
         }, 1000);
     }
 
-    function renderUnitModal(container) {
-        const unitKey = state.editingUnitKey;
-        if (!unitKey) return;
+    function startSessionTimer() {
+        setInterval(() => {
+            const timerEl = document.getElementById('shift-timer');
+            if (state.isShiftActive && state.startTime && timerEl) {
+                const diff = Math.max(0, new Date() - state.startTime);
+                const h = Math.floor(diff / 3600000).toString().padStart(2, '0');
+                const m = Math.floor((diff % 3600000) / 60000).toString().padStart(2, '0');
+                const s = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
+                timerEl.innerText = `SESSION: ${h}:${m}:${s}`;
+            } else if (timerEl) {
+                timerEl.innerText = "SESSION: 00:00:00";
+            }
+        }, 1000);
+    }
 
+    // Reuse the existing CORE ACTIONS (deployVehicle, syncMovement, etc.)
+    // I will port them exactly as they are but with UI updates
+
+    window.openUnitModal = (unitKey) => {
         const vid = parseInt(unitKey.split('_')[0]);
         const index = parseInt(unitKey.split('_')[1]);
         const v = state.fleet.find(x => x.id === vid);
@@ -1056,7 +574,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.movements[unitKey]) {
             state.movements[unitKey] = {
                 indicatif: `${v.type.split(' ')[0]}-${index + 1}`,
-                crew: v.crew || '', // Par défaut l'équipage du véhicule
+                crew: v.crew || '',
                 mission: '',
                 status: 'En cours',
                 condition: 'Opérationnel',
@@ -1065,107 +583,359 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const m = state.movements[unitKey];
 
-        const modalHtml = `
-            <div class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
-                <div class="absolute inset-0 bg-slate-950/90 backdrop-blur-sm" onclick="closeUnitModal()"></div>
-                
-                <div class="relative w-full max-w-lg bg-slate-900 border-t sm:border border-white/10 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-slide-up">
-                    <div class="h-1.5 w-12 bg-white/10 rounded-full mx-auto mt-3 mb-1 sm:hidden"></div>
-                    
-                    <div class="p-6">
-                        <div class="flex justify-between items-start mb-6">
-                            <div>
-                                <h3 class="text-xl font-black text-white uppercase tracking-tighter">${v.type}</h3>
-                                <span class="text-[9px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full font-black uppercase tracking-widest border border-indigo-500/20">UNITÉ V.${index + 1}</span>
-                            </div>
-                            <button onclick="closeUnitModal()" class="bg-slate-800 p-2 rounded-xl text-slate-500">
-                                <i data-lucide="x" class="w-5 h-5"></i>
-                            </button>
-                        </div>
+        const overlay = document.getElementById('modal-overlay');
+        const content = document.getElementById('modal-content');
 
-                        <div class="space-y-4">
-                            <div class="grid grid-cols-2 gap-3">
-                                <div class="bg-slate-800/50 rounded-2xl p-3 border border-white/5">
-                                    <label class="text-[8px] text-slate-500 uppercase font-black block mb-1 tracking-widest">Indicatif</label>
-                                    <input type="text" value="${m.indicatif}" 
-                                           oninput="updateMovementField('${unitKey}', 'indicatif', this.value)"
-                                           class="bg-transparent text-sm text-white w-full outline-none font-bold">
-                                </div>
-                                <div class="bg-slate-800/50 rounded-2xl p-3 border border-white/5">
-                                    <label class="text-[8px] text-slate-500 uppercase font-black block mb-1 tracking-widest">Équipier</label>
-                                    <input type="text" value="${m.crew || ''}" 
-                                           oninput="updateMovementField('${unitKey}', 'crew', this.value)"
-                                           class="bg-transparent text-sm text-blue-400 w-full outline-none font-bold">
-                                </div>
-                            </div>
+        content.innerHTML = `
+            <div class="p-6 relative">
+                <div class="absolute top-0 right-0 p-4">
+                    <button onclick="closeModal()" class="text-slate-500 hover:text-white transition-all">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
 
-                            <div class="bg-slate-800/50 rounded-2xl p-3 border border-white/5">
-                                <label class="text-[8px] text-slate-500 uppercase font-black block mb-1 tracking-widest">Mission / Secteur</label>
-                                <input type="text" value="${m.mission}" placeholder="Décrivez la mission..."
-                                       oninput="updateMovementField('${unitKey}', 'mission', this.value)"
-                                       class="bg-transparent text-sm text-white w-full outline-none font-bold">
-                            </div>
+                <div class="mb-6">
+                    <div class="text-[9px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1">Unité Tactique</div>
+                    <h3 class="text-2xl font-black text-white uppercase font-orbitron">${v.type} <span class="text-cyan-400 opacity-50 text-sm">V.${index + 1}</span></h3>
+                </div>
 
-                            <div>
-                                <label class="text-[8px] text-slate-500 uppercase font-black block mb-2 tracking-widest">État du Matériel</label>
-                                <div class="grid grid-cols-3 gap-2">
-                                    ${['Opérationnel', 'En Réparation', 'HS'].map(c => `
-                                        <button onclick="updateMovementField('${unitKey}', 'condition', '${c}'); render();" 
-                                                class="py-3 rounded-xl text-[9px] font-black uppercase border transition-all ${m.condition === c ? (c === 'HS' ? 'bg-red-600 border-red-400 text-white' : 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-900/40') : 'bg-slate-800 border-white/5 text-slate-500'}">
-                                            ${c === 'Opérationnel' ? 'OPR' : c === 'En Réparation' ? 'RÉPA' : 'HS'}
-                                        </button>
-                                    `).join('')}
-                                </div>
-                            </div>
-
-                            <div class="bg-slate-800/50 rounded-2xl p-3 border border-white/5">
-                                <label class="text-[8px] text-slate-500 uppercase font-black block mb-1 tracking-widest">Observations / Remarques</label>
-                                <textarea oninput="updateMovementField('${unitKey}', 'remark', this.value)"
-                                          placeholder="Précisez l'état ou les détails de la mission..."
-                                          class="bg-transparent text-sm text-white w-full outline-none font-bold min-h-[60px] resize-none">${m.remark || ''}</textarea>
-                            </div>
-
-                            <div>
-                                <label class="text-[8px] text-slate-500 uppercase font-black block mb-2 tracking-widest">Statut Mission</label>
-                                <div class="grid grid-cols-3 gap-2">
-                                    ${['En cours', 'Terminé', 'Échec'].map(s => `
-                                        <button onclick="updateMovementField('${unitKey}', 'status', '${s}'); render();" 
-                                                class="py-3 rounded-xl text-[9px] font-black uppercase border transition-all ${m.status === s ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-900/40' : 'bg-slate-800 border-white/5 text-slate-500'}">
-                                            ${s}
-                                        </button>
-                                    `).join('')}
-                                </div>
-                            </div>
-
-                            <div class="pt-4 flex gap-3">
-                                <button onclick="syncMovement('${unitKey}'); closeUnitModal();"
-                                        class="flex-1 py-4 bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-indigo-900/40 active:scale-95 transition-all">
-                                    ${m.mission ? 'VALIDATION' : 'DÉPART MISSION'}
-                                </button>
-                                <button onclick="reportLoss(${v.id}); closeUnitModal();" 
-                                        title="Détruire le véhicule (HS)"
-                                        class="px-5 py-4 bg-red-600/10 text-red-500 rounded-2xl border border-red-500/10 active:scale-95 transition-all">
-                                    <i data-lucide="skull" class="w-5 h-5"></i>
-                                </button>
-                                <button onclick="cancelDeployment(${v.id});" 
-                                        title="Annuler le déploiement (Rembourser Supply)"
-                                        class="px-5 py-4 bg-slate-800 text-slate-400 rounded-2xl border border-white/5 active:scale-95 transition-all hover:bg-slate-700 hover:text-white">
-                                    <i data-lucide="trash-2" class="w-5 h-5"></i>
-                                </button>
-                            </div>
-                        </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-black/40 border border-cyan-500/20 p-3 rounded">
+                        <label class="text-[8px] text-slate-500 font-black uppercase block mb-1">Identifiant Radio</label>
+                        <input type="text" value="${m.indicatif}" oninput="updateMovementField('${unitKey}', 'indicatif', this.value)"
+                               class="bg-transparent text-white font-bold w-full outline-none border-b border-transparent focus:border-cyan-500 transition-all text-sm uppercase">
                     </div>
+                    <div class="bg-black/40 border border-cyan-500/20 p-3 rounded">
+                        <label class="text-[8px] text-slate-500 font-black uppercase block mb-1">Équipage Assigné</label>
+                        <input type="text" value="${m.crew || ''}" oninput="updateMovementField('${unitKey}', 'crew', this.value)"
+                               class="bg-transparent text-cyan-400 font-bold w-full outline-none border-b border-transparent focus:border-cyan-500 transition-all text-sm uppercase">
+                    </div>
+                </div>
+
+                <div class="bg-black/40 border border-cyan-500/20 p-3 rounded mb-4">
+                    <label class="text-[8px] text-slate-500 font-black uppercase block mb-1">Mission / Secteur d'Opérations</label>
+                    <input type="text" value="${m.mission}" placeholder="Entrez les ordres de mission..."
+                           oninput="updateMovementField('${unitKey}', 'mission', this.value)"
+                           class="bg-transparent text-white font-bold w-full outline-none border-b border-transparent focus:border-cyan-500 transition-all text-sm uppercase">
+                </div>
+
+                <div class="mb-4">
+                    <label class="text-[8px] text-slate-500 font-black uppercase block mb-2">État du Matériel</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        ${['Opérationnel', 'En Réparation', 'HS'].map(c => `
+                            <button onclick="updateMovementField('${unitKey}', 'condition', '${c}'); openUnitModal('${unitKey}')" 
+                                    class="py-2.5 rounded border text-[9px] font-black uppercase transition-all ${m.condition === c ? (c === 'HS' ? 'bg-red-600 border-red-400 text-white shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-cyan-600 border-cyan-400 text-white shadow-[0_0_15px_rgba(0,242,255,0.3)]') : 'bg-black/40 border-cyan-500/10 text-slate-500 hover:border-cyan-500/30'}">
+                                ${c === 'Opérationnel' ? 'OPR' : c === 'En Réparation' ? 'RÉPA' : 'HS'}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="bg-black/40 border border-cyan-500/20 p-3 rounded mb-6">
+                    <label class="text-[8px] text-slate-500 font-black uppercase block mb-1">Notes de Commandement</label>
+                    <textarea oninput="updateMovementField('${unitKey}', 'remark', this.value)"
+                              placeholder="Notes additionnelles..."
+                              class="bg-transparent text-white font-bold w-full outline-none text-[10px] min-h-[50px] resize-none uppercase">${m.remark || ''}</textarea>
+                </div>
+
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <button onclick="syncMovement('${unitKey}')" 
+                            class="flex-1 py-4 bg-cyan-600 border border-cyan-400 text-white font-black uppercase tracking-widest text-[10px] rounded hover:bg-cyan-500 transition-all shadow-[0_0_20px_rgba(0,242,255,0.1)] active:scale-95">
+                        Transmettre les Ordres
+                    </button>
+                    ${m.status === 'En cours' ? `
+                        <button onclick="finishMission('${unitKey}')" 
+                                class="flex-1 py-4 bg-red-600/20 border border-red-500/40 text-red-500 font-black uppercase tracking-widest text-[10px] rounded hover:bg-red-600 hover:text-white transition-all active:scale-95">
+                            Finir la Mission
+                        </button>
+                    ` : ''}
                 </div>
             </div>
         `;
 
-        const modalDiv = document.createElement('div');
-        modalDiv.id = 'unit-modal-layer';
-        modalDiv.innerHTML = modalHtml;
-        container.appendChild(modalDiv);
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
         lucide.createIcons();
-    }
+    };
 
-    // --- INIT ---
-    init();
+    window.closeModal = () => {
+        document.getElementById('modal-overlay').classList.add('hidden');
+        document.getElementById('modal-overlay').classList.remove('flex');
+    };
+
+    window.showTacticalConfirm = (title, message, onConfirm) => {
+        const overlay = document.getElementById('modal-overlay');
+        const content = document.getElementById('modal-content');
+
+        content.innerHTML = `
+            <div class="p-6 relative text-center">
+                <div class="mb-6">
+                    <div class="text-[9px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1">Confirmation Tactique</div>
+                    <h3 class="text-xl font-black text-white uppercase font-orbitron">${title}</h3>
+                </div>
+                
+                <p class="text-slate-400 font-bold text-sm mb-8 uppercase">${message}</p>
+                
+                <div class="flex gap-4">
+                    <button id="modal-confirm-btn" class="flex-1 py-4 bg-cyan-600 border border-cyan-400 text-white font-black uppercase tracking-widest text-[10px] rounded hover:bg-cyan-500 transition-all shadow-[0_0_20px_rgba(0,242,255,0.1)] active:scale-95">
+                        Confirmer
+                    </button>
+                    <button onclick="closeModal()" class="flex-1 py-4 bg-slate-800 border border-slate-700 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded hover:bg-slate-700 hover:text-white transition-all active:scale-95">
+                        Annuler
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('modal-confirm-btn').onclick = () => {
+            onConfirm();
+            closeModal();
+        };
+
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
+        lucide.createIcons();
+    };
+
+    window.showTacticalPrompt = (title, message, defaultValue, onConfirm) => {
+        const overlay = document.getElementById('modal-overlay');
+        const content = document.getElementById('modal-content');
+
+        content.innerHTML = `
+            <div class="p-6 relative text-center">
+                <div class="mb-6">
+                    <div class="text-[9px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1">Ajustement Système</div>
+                    <h3 class="text-xl font-black text-white uppercase font-orbitron">${title}</h3>
+                </div>
+                
+                <p class="text-slate-400 font-bold text-[9px] mb-4 uppercase">${message}</p>
+                
+                <div class="bg-black/40 border-2 border-cyan-500/20 p-4 rounded-xl mb-8">
+                    <input type="text" id="modal-prompt-input" value="${defaultValue}" 
+                           class="bg-transparent text-white font-black font-orbitron text-2xl w-full text-center outline-none border-b-2 border-transparent focus:border-cyan-500 transition-all uppercase">
+                </div>
+                
+                <div class="flex gap-4">
+                    <button id="modal-confirm-btn" class="flex-1 py-4 bg-cyan-600 border border-cyan-400 text-white font-black uppercase tracking-widest text-[10px] rounded hover:bg-cyan-500 transition-all shadow-[0_0_20px_rgba(0,242,255,0.1)] active:scale-95">
+                        Valider
+                    </button>
+                    <button onclick="closeModal()" class="flex-1 py-4 bg-slate-800 border border-slate-700 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded hover:bg-slate-700 hover:text-white transition-all active:scale-95">
+                        Annuler
+                    </button>
+                </div>
+            </div>
+        `;
+
+        const input = document.getElementById('modal-prompt-input');
+        input.focus();
+        input.select();
+
+        document.getElementById('modal-confirm-btn').onclick = () => {
+            onConfirm(input.value);
+            closeModal();
+        };
+
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
+        lucide.createIcons();
+    };
+
+    window.updateMovementField = (id, field, value) => {
+        if (state.movements[id]) {
+            state.movements[id][field] = value;
+        }
+    };
+
+    window.syncMovement = (unitKey) => {
+        const vid = parseInt(unitKey.split('_')[0]);
+        const v = state.fleet.find(x => x.id === vid);
+        const m = state.movements[unitKey];
+        if (!v || !m) return;
+
+        // Visual feedback
+        const btn = event.currentTarget;
+        const originalText = btn.innerText;
+        btn.innerText = "TRANSMISSION...";
+        btn.disabled = true;
+
+        fetch(API_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({
+                action: 'log_equipage',
+                data: {
+                    vehicleType: v.type,
+                    idIndicatif: m.indicatif,
+                    crew: m.crew || v.crew || "Personnel",
+                    mission: m.mission,
+                    status: m.status,
+                    condition: "'" + m.condition,
+                    remark: m.remark || ""
+                }
+            })
+        }).then(() => {
+            m.isLogged = true;
+            closeModal();
+            setTimeout(() => init(true), 1000);
+        });
+    };
+
+    window.finishMission = (unitKey) => {
+        if (!state.movements[unitKey]) return;
+
+        showTacticalConfirm(
+            "Fin de Mission",
+            `Souhaitez-vous clôturer la mission pour ${state.movements[unitKey].indicatif} ?`,
+            () => {
+                state.movements[unitKey].status = 'Terminé';
+                syncMovement(unitKey);
+            }
+        );
+    };
+
+    window.updateBaseStat = (key, currentVal) => {
+        const labels = { 'supply': 'Gestion des Réserves (Supply)', 'personnel': 'Effectifs (Personnel)', 'medics': 'V2 / EVS' };
+
+        if (key === 'supply') {
+            const overlay = document.getElementById('modal-overlay');
+            const content = document.getElementById('modal-content');
+
+            content.innerHTML = `
+                <div class="p-6 relative text-center">
+                    <div class="mb-6">
+                        <div class="text-[9px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1">Configuration Logistique</div>
+                        <h3 class="text-xl font-black text-white uppercase font-orbitron">${labels[key]}</h3>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 mb-8">
+                        <div class="bg-black/40 border-2 border-cyan-500/20 p-4 rounded-xl text-left">
+                            <label class="text-[8px] text-slate-500 font-black uppercase mb-2 block">Valeur Actuelle</label>
+                            <input type="number" id="modal-supply-current" value="${state.supply}" 
+                                   class="bg-transparent text-white font-black font-orbitron text-xl w-full outline-none border-b border-transparent focus:border-cyan-500 transition-all">
+                        </div>
+                        <div class="bg-black/40 border-2 border-slate-500/10 p-4 rounded-xl text-left">
+                            <label class="text-[8px] text-slate-500 font-black uppercase mb-2 block">Capacité Max</label>
+                            <input type="number" id="modal-supply-max" value="${state.maxSupply}" 
+                                   class="bg-transparent text-white/50 font-black font-orbitron text-xl w-full outline-none border-b border-transparent focus:border-cyan-500 transition-all">
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-4">
+                        <button id="modal-save-supply" class="flex-1 py-4 bg-cyan-600 border border-cyan-400 text-white font-black uppercase tracking-widest text-[10px] rounded hover:bg-cyan-500 transition-all active:scale-95">
+                            Mettre à Jour le Stock
+                        </button>
+                        <button onclick="closeModal()" class="flex-1 py-4 bg-slate-800 border border-slate-700 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded hover:bg-slate-700 hover:text-white transition-all active:scale-95">
+                            Annuler
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('modal-save-supply').onclick = () => {
+                const newCurrent = parseInt(document.getElementById('modal-supply-current').value);
+                const newMax = parseInt(document.getElementById('modal-supply-max').value);
+
+                if (!isNaN(newCurrent) && !isNaN(newMax)) {
+                    state.supply = newCurrent;
+                    state.maxSupply = newMax;
+                    render();
+
+                    fetch(API_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            action: 'sync_globals',
+                            data: { supply: state.supply, maxSupply: state.maxSupply }
+                        })
+                    }).then(() => {
+                        setTimeout(() => init(true), 1000);
+                    });
+                }
+                closeModal();
+            };
+
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+            return;
+        }
+
+        showTacticalPrompt(
+            labels[key],
+            `Ajuster la valeur actuelle de ${currentVal}`,
+            currentVal,
+            (newVal) => {
+                if (newVal === null || newVal === "" || isNaN(newVal)) return;
+
+                state[key] = parseInt(newVal);
+                render(); // Optimistic update
+
+                fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({
+                        action: 'sync_globals',
+                        data: { [key]: state[key] }
+                    })
+                }).then(() => {
+                    console.log(`[SYNC] ${key} updated successfully.`);
+                    setTimeout(() => init(true), 1000); // Re-sync to be sure
+                });
+            }
+        );
+    };
+
+    window.toggleShift = () => {
+        const nameInput = document.getElementById('sl-name-input');
+        const name = nameInput ? nameInput.value.trim() : state.slName;
+
+        if (!name && !state.isShiftActive) {
+            showTacticalConfirm("Erreur", "Veuillez entrer un nom d'opérateur avant de commencer le service.", () => { });
+            return;
+        }
+
+        const action = state.isShiftActive ? 'shift_stop' : 'shift_start';
+        const msg = state.isShiftActive ? "Voulez-vous clore votre session de service ?" : `Prendre le service en tant que ${name} ?`;
+
+        showTacticalConfirm(
+            state.isShiftActive ? "Fin de Service" : "Prise de Service",
+            msg,
+            () => {
+                const btn = document.getElementById('shift-toggle-btn');
+                if (btn) btn.innerText = "SYNCHRONISATION...";
+
+                fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({
+                        action: action,
+                        data: {
+                            slName: name,
+                            pseudo: name // For backward compatibility with Code.gs
+                        }
+                    })
+                }).then(() => {
+                    state.slName = name;
+                    state.isShiftActive = !state.isShiftActive;
+                    if (state.isShiftActive) state.startTime = new Date();
+                    localStorage.setItem('fof_logi_settings', JSON.stringify({
+                        slName: state.slName,
+                        personnel: state.personnel,
+                        medics: state.medics
+                    }));
+                    render();
+                    init(true);
+                });
+            }
+        );
+    };
+    localStorage.setItem('fof_logi_settings', JSON.stringify({
+        slName: state.slName,
+        personnel: state.personnel,
+        medics: state.medics
+    }));
+
+    render();
+
+    // Auto-synchronisation toutes les 10 secondes
+    setInterval(() => init(true), 10000);
 });

@@ -19,27 +19,32 @@ function getActiveMovements(ss) {
   const lastRow = logSheet.getLastRow();
   if (lastRow < 2) return {};
 
-  const values = logSheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  const values = logSheet.getRange(2, 1, lastRow - 1, 8).getValues();
   const movements = {};
+  const processedIndicatifs = new Set();
 
+  // On parcourt du plus récent au plus ancien
   for (let i = values.length - 1; i >= 0; i--) {
     const row = values[i];
-    const status = String(row[5]);
     const indicatif = String(row[2]);
     const vehicleType = String(row[1]);
+    const status = String(row[5]);
 
-    if (status === 'En cours' && indicatif) {
-      if (!movements[indicatif]) {
-        movements[indicatif] = {
-          vehicleType: vehicleType,
-          indicatif: indicatif,
-          crew: String(row[3]),
-          mission: String(row[4]),
-          status: status,
-          condition: String(row[6]),
-          remark: String(row[7] || "")
-        };
-      }
+    if (!indicatif || processedIndicatifs.has(indicatif)) continue;
+    
+    processedIndicatifs.add(indicatif);
+
+    // On ne garde QUE si le statut le plus récent est 'En cours'
+    if (status === 'En cours') {
+      movements[indicatif] = {
+        vehicleType: vehicleType,
+        indicatif: indicatif,
+        crew: String(row[3]),
+        mission: String(row[4]),
+        status: status,
+        condition: String(row[6]),
+        remark: String(row[7] || "")
+      };
     }
   }
   return movements;
@@ -70,7 +75,7 @@ function handleRequest(method, e) {
     const dashSheet = ss.getSheetByName(SHEETS.DASHBOARD);
     
     if (!dashSheet) throw new Error("L'onglet '" + SHEETS.DASHBOARD + "' est introuvable.");
-
+ 
     let payload = {};
 
     if (method === 'GET') {
@@ -224,8 +229,9 @@ function startShift(ss, data) {
   const base = ss.getSheetByName(SHEETS.BASE);
   
   if (dash) {
-    dash.getRange(4, 8).setValue(data.pseudo); 
-    dash.getRange(4, 9).setValue(data.startTime); 
+    const pseudo = data.slName || data.pseudo || "Personnel";
+    dash.getRange(4, 8).setValue(pseudo); 
+    dash.getRange(4, 9).setValue(new Date()); // Toujours utiliser l'heure serveur pour la précision
     dash.getRange(4, 10).setValue(""); 
   }
   
@@ -251,7 +257,7 @@ function stopShift(ss, data) {
   
   if (dash) {
     dash.getRange(4, 8).setValue("OFF");
-    dash.getRange(4, 10).setValue(data.endTime);
+    dash.getRange(4, 10).setValue(new Date());
   }
   
   if (hist) {
@@ -289,8 +295,8 @@ function getGlobalSettings(sheet) {
     personnel: Number(sheet.getRange(5, 11).getValue()), // K5
     medics: Number(sheet.getRange(7, 11).getValue()),    // K7
     slName: String(sheet.getRange(4, 8).getValue()),     // H4
-    shiftStartTime: (startVal instanceof Date) ? startVal.toISOString() : startVal,
-    shiftEndTime: (endVal instanceof Date) ? endVal.toISOString() : endVal
+    shiftStartTime: (startVal instanceof Date) ? startVal.toISOString() : (startVal ? new Date(startVal).toISOString() : null),
+    shiftEndTime: (endVal instanceof Date) ? endVal.toISOString() : (endVal ? new Date(endVal).toISOString() : null)
   };
 }
 
@@ -308,4 +314,33 @@ function updateGlobalSettings(sheet, data) {
   if (data.medics !== undefined && data.medics !== null) sheet.getRange(7, 11).setValue(data.medics);
   
   return data;
+}
+
+/**
+ * TRIGGER:onEdit - Automatisation pour les saisies manuelles
+ */
+function onEdit(e) {
+  const range = e.range;
+  const sheet = range.getSheet();
+  
+  // Vérifier qu'on est sur l'onglet Tableau de Bord
+  if (sheet.getName() !== SHEETS.DASHBOARD) return;
+  
+  const row = range.getRow();
+  const col = range.getColumn();
+  
+  // On surveille uniquement la cellule H4 (SL Logis)
+  if (row === 4 && col === 8) {
+    const newVal = String(e.value || "").toUpperCase();
+    
+    // Si c'est un nom (pas OFF, pas vide)
+    if (newVal !== "OFF" && newVal !== "") {
+      sheet.getRange(4, 9).setValue(new Date()); // I4 Debut
+      sheet.getRange(4, 10).setValue("");       // J4 Fin
+    } 
+    // Si c'est OFF ou vide
+    else {
+      sheet.getRange(4, 10).setValue(new Date()); // J4 Fin
+    }
+  }
 }
