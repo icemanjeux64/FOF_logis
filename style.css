@@ -56,8 +56,6 @@ body {
     background-color: var(--bg-dark);
     margin: 0;
     font-family: 'Inter', sans-serif;
-    min-height: 100vh;
-    min-height: 100dvh;
 }
 
 .font-orbitron {
@@ -100,10 +98,12 @@ body {
     position: relative;
     overflow: hidden;
     padding: 1rem;
+    /* Removed global height: 100% to allow flexible cards */
 }
 
 .hud-panel h2 {
     font-size: 0.65rem;
+    /* Smaller titles */
     margin-bottom: 0.75rem;
 }
 
@@ -125,7 +125,6 @@ body {
     animation: pulse-cyan 10s ease-in-out infinite;
     padding: 0.5rem;
     height: 100vh;
-    height: 100dvh;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
@@ -159,6 +158,7 @@ body {
     transition: all 0.2s ease;
     text-shadow: 0 0 10px rgba(0, 242, 255, 0);
     font-size: 0.6rem;
+    /* Smaller nav text */
 }
 
 .nav-btn i {
@@ -195,7 +195,7 @@ body {
 }
 
 /* RESPONSIVE OVERRIDES (MOBILE FIRST) */
-@media (max-width: 1024px) {
+@media (max-width: 640px) {
     :root {
         --base-font-size: 11px;
     }
@@ -206,80 +206,60 @@ body {
 
     .hud-container {
         padding: 0.25rem;
-        padding-bottom: calc(0.25rem + env(safe-area-inset-bottom, 0px));
     }
 
     .hud-panel {
         padding: 0.5rem;
     }
 
-    /* COMPACT HEADER LAYOUT */
     header {
-        display: grid !important;
-        grid-template-areas:
-            "logo time badge"
-            "title title title" !important;
-        grid-template-columns: 1fr 2fr 1fr !important;
-        align-items: center !important;
         padding-bottom: 0.5rem !important;
         margin-bottom: 0.5rem !important;
-        gap: 0.5rem !important;
-    }
-
-    .header-logo {
-        grid-area: logo;
-        justify-self: start;
-        margin: 0 !important;
-    }
-
-    .header-time {
-        grid-area: time;
-        justify-self: center;
-        margin: 0 !important;
-    }
-
-    .header-badge {
-        grid-area: badge;
-        justify-self: end;
-        position: relative !important;
-        top: 0 !important;
-        right: 0 !important;
-    }
-
-    .header-title {
-        grid-area: title;
-        margin-top: 0.25rem;
     }
 
     header img {
-        width: 2.5rem !important;
-        height: 2.5rem !important;
+        width: 3rem !important;
+        height: 3rem !important;
     }
 
     header h1 {
-        font-size: 0.8rem !important;
+        font-size: 0.9rem !important;
     }
 
     #real-time-clock {
-        font-size: 1.1rem !important;
+        font-size: 1.25rem !important;
     }
 
     #shift-duration-container {
-        scale: 0.7;
-        margin-top: 0;
+        scale: 0.8;
+        margin-top: -0.25rem;
     }
 
-    /* ONLY SHOW FAB ON MOBILE/TABLET (< 1025px) */
-    .menu-fab {
-        display: flex !important;
+    .nav-btn span {
+        font-size: 7px !important;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+    header img {
+        width: 5rem !important;
+        height: 5rem !important;
+    }
+
+    header h1 {
+        font-size: 1.5rem !important;
+    }
+
+    #real-time-clock {
+        font-size: 2rem !important;
+    }
+
+    .hud-panel {
+        padding: 0.75rem;
     }
 }
 
 @media (min-width: 1025px) {
-    .menu-fab {
-        display: none !important;
-    }
-
     .hud-container {
         padding: 1rem;
         max-width: 100% !important;
@@ -299,41 +279,17 @@ body {
     }
 }
 
-/* HAMBURGER MENU / OVERLAY */
+/* HAMBURGER MENU */
 #mobile-menu-overlay {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px)) !important;
 }
 
 .menu-open {
     transform: translateX(0);
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
 }
 
 .menu-closed {
     transform: translateX(100%);
-    opacity: 0 !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-}
-
-/* 1024px GRID SELECTORS */
-.header-logo {
-    grid-area: logo;
-}
-
-.header-time {
-    grid-area: time;
-}
-
-.header-badge {
-    grid-area: badge;
-}
-
-.header-title {
-    grid-area: title;
 }
 
 /* VERY SMALL HEIGHTS (Mobile/Short Tablet) */
@@ -344,6 +300,7 @@ body {
 
     .hud-panel h2 {
         display: none;
+        /* Hide internal panel titles to save space */
     }
 }
 
@@ -351,6 +308,7 @@ body {
 .circle-gauge {
     position: relative;
     width: 6.25rem;
+    /* 100px */
     height: 6.25rem;
     display: flex;
     align-items: center;
@@ -399,6 +357,7 @@ body {
 
     .stat-card-adaptive i {
         display: none;
+        /* Hide icons to save space */
     }
 
     .circle-gauge {
@@ -467,34 +426,4 @@ body {
     background: #ef4444;
     color: white;
     box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
-}
-
-/* FLOATING MENU BUTTON (FAB) */
-.menu-fab {
-    position: fixed;
-    bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
-    right: 1.5rem;
-    width: 3.5rem;
-    height: 3.5rem;
-    background: var(--bg-dark);
-    border: 1px solid var(--cyan-dim);
-    border-radius: 50%;
-    color: var(--cyan);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 200;
-    /* Higher than HUD accents */
-    box-shadow: 0 0 20px rgba(0, 242, 255, 0.4);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.menu-fab:active {
-    scale: 0.9;
-    box-shadow: 0 0 30px var(--cyan);
-}
-
-.menu-fab i {
-    width: 1.5rem;
-    height: 1.5rem;
 }
