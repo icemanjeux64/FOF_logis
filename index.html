@@ -30,8 +30,8 @@
         <!-- HEADER -->
         <header
             class="flex flex-col items-center mb-2 lg:mb-6 border-b border-cyan-500/30 pb-2 lg:pb-4 relative w-full">
-            <!-- MOBILE MENU BUTTON (Visible on < 640px) -->
-            <div class="absolute top-2 left-2 block lg:hidden">
+            <!-- MOBILE MENU BUTTON (Visible ONLY ON PHONE < 769px) -->
+            <div class="absolute top-2 left-2 menu-toggle-btn">
                 <button onclick="toggleMobileMenu()" title="Ouvrir le menu"
                     class="p-2 text-cyan-400 hover:text-white transition-all">
                     <i data-lucide="menu"></i>
@@ -39,13 +39,13 @@
             </div>
 
             <!-- CENTERED LOGO -->
-            <div class="mb-1 lg:mb-4">
+            <div class="header-logo mb-1 lg:mb-4">
                 <img src="logo.png" alt="FOF Logo"
                     class="w-12 h-12 lg:w-28 lg:h-28 object-contain drop-shadow-[0_0_20px_rgba(0,242,255,0.8)]">
             </div>
 
             <!-- TIME & DURATION (BELOW LOGO) -->
-            <div class="flex flex-col items-center gap-0 lg:gap-1 mb-2 lg:mb-3">
+            <div class="header-time flex flex-col items-center gap-0 lg:gap-1 mb-2 lg:mb-3">
                 <div id="real-time-clock"
                     class="font-orbitron font-black text-white text-lg lg:text-3xl tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">
                     --:--:--
@@ -61,7 +61,7 @@
             </div>
 
             <!-- CENTERED TITLE -->
-            <div class="text-center px-8">
+            <div class="header-title text-center px-8">
                 <h1
                     class="text-[10px] lg:text-2xl xl:text-3xl font-black uppercase tracking-[0.1em] text-white font-orbitron leading-none">
                     Tableau de Bord - Logistique FOF
@@ -69,7 +69,7 @@
             </div>
 
             <!-- STATUS BADGE (CORNER POSITIONING) -->
-            <div class="absolute top-2 right-2 lg:top-4 lg:right-4">
+            <div class="header-badge absolute top-2 right-2 lg:top-4 lg:right-4">
                 <div id="sl-status-badge"
                     class="px-1.5 py-0.5 lg:px-2 lg:py-1 rounded border border-cyan-500/20 bg-cyan-500/5 text-[7px] lg:text-[10px] font-black uppercase tracking-widest flex items-center gap-1 opacity-70">
                     <span id="sl-status-text">OFFLINE</span>

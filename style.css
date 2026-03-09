@@ -195,7 +195,7 @@ body {
 }
 
 /* RESPONSIVE OVERRIDES (MOBILE FIRST) */
-@media (max-width: 640px) {
+@media (max-width: 1024px) {
     :root {
         --base-font-size: 11px;
     }
@@ -212,50 +212,71 @@ body {
         padding: 0.5rem;
     }
 
+    /* COMPACT HEADER LAYOUT */
     header {
+        display: grid !important;
+        grid-template-areas:
+            "logo time badge"
+            "title title title" !important;
+        grid-template-columns: 1fr 2fr 1fr !important;
+        align-items: center !important;
         padding-bottom: 0.5rem !important;
         margin-bottom: 0.5rem !important;
+        gap: 0.5rem !important;
+    }
+
+    header>div:first-of-type {
+        grid-area: logo;
+        justify-self: start;
+        margin: 0 !important;
+    }
+
+    header>div:nth-of-type(2) {
+        grid-area: time;
+        justify-self: center;
+        margin: 0 !important;
+    }
+
+    header>div:last-of-type {
+        grid-area: badge;
+        justify-self: end;
+        position: relative !important;
+        top: 0 !important;
+        right: 0 !important;
+    }
+
+    header .text-center {
+        grid-area: title;
+        margin-top: 0.25rem;
     }
 
     header img {
-        width: 3rem !important;
-        height: 3rem !important;
+        width: 2.5rem !important;
+        height: 2.5rem !important;
     }
 
     header h1 {
-        font-size: 0.9rem !important;
+        font-size: 0.8rem !important;
     }
 
     #real-time-clock {
-        font-size: 1.25rem !important;
+        font-size: 1.1rem !important;
     }
 
     #shift-duration-container {
-        scale: 0.8;
-        margin-top: -0.25rem;
+        scale: 0.7;
+        margin-top: 0;
     }
 
-    .nav-btn span {
-        font-size: 7px !important;
+    /* ONLY SHOW HAMBURGER ON PHONE (< 768px) */
+    .menu-toggle-btn {
+        display: block !important;
     }
 }
 
-@media (min-width: 641px) and (max-width: 1024px) {
-    header img {
-        width: 5rem !important;
-        height: 5rem !important;
-    }
-
-    header h1 {
-        font-size: 1.5rem !important;
-    }
-
-    #real-time-clock {
-        font-size: 2rem !important;
-    }
-
-    .hud-panel {
-        padding: 0.75rem;
+@media (min-width: 769px) {
+    .menu-toggle-btn {
+        display: none !important;
     }
 }
 
@@ -286,10 +307,33 @@ body {
 
 .menu-open {
     transform: translateX(0);
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
 }
 
 .menu-closed {
     transform: translateX(100%);
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 1024px GRID SELECTORS */
+.header-logo {
+    grid-area: logo;
+}
+
+.header-time {
+    grid-area: time;
+}
+
+.header-badge {
+    grid-area: badge;
+}
+
+.header-title {
+    grid-area: title;
 }
 
 /* VERY SMALL HEIGHTS (Mobile/Short Tablet) */
