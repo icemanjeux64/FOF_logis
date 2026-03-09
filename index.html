@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>FOF - TACTICAL COMMAND CENTER</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -70,33 +70,6 @@
             </div>
         </header>
 
-        <!-- MOBILE MENU OVERLAY -->
-        <div id="mobile-menu-overlay"
-            class="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl menu-closed flex flex-col p-8 lg:hidden">
-            <div class="flex justify-between items-center mb-12">
-                <img src="logo.png" class="w-12 h-12 object-contain" alt="FOF Menu Logo">
-                <button onclick="toggleMobileMenu()" title="Fermer le menu" class="p-2 text-cyan-400">
-                    <i data-lucide="x" class="w-8 h-8"></i>
-                </button>
-            </div>
-            <nav class="flex flex-col gap-8 text-center">
-                <button onclick="changeView('dashboard'); toggleMobileMenu()"
-                    class="text-2xl font-black font-orbitron text-white uppercase tracking-widest">Tableau</button>
-                <button onclick="changeView('operations'); toggleMobileMenu()"
-                    class="text-2xl font-black font-orbitron text-white uppercase tracking-widest">Opérations</button>
-                <button onclick="changeView('fleet'); toggleMobileMenu()"
-                    class="text-2xl font-black font-orbitron text-white uppercase tracking-widest">Catalogue
-                    Flotte</button>
-                <button onclick="changeView('service'); toggleMobileMenu()"
-                    class="text-2xl font-black font-orbitron text-white uppercase tracking-widest">Gestion
-                    Service</button>
-            </nav>
-            <div class="mt-auto text-center py-8">
-                <div class="text-[10px] font-black text-cyan-500/40 uppercase tracking-[0.5em]">Tactical HUB v2.5</div>
-                <div class="text-[8px] text-slate-500 mt-2 uppercase">Mobile command interface for FOF Logistics</div>
-            </div>
-        </div>
-
         <!-- MAIN DASHBOARD VIEW -->
         <main id="main-content" class="flex-1 overflow-hidden">
             <!-- Initial content will be injected by app.js:init() -> render() -->
@@ -131,12 +104,39 @@
                 </button>
             </nav>
         </footer>
-
-        <!-- MOBILE MENU FAB (Floating Action Button) -->
-        <button onclick="toggleMobileMenu()" title="Ouvrir le menu" class="menu-fab lg:hidden">
-            <i data-lucide="menu"></i>
-        </button>
     </div>
+
+    <!-- OVERLAYS MOVED OUTSIDE HUD-CONTAINER TO PREVENT CLIPPING / BACKDROP ISSUES -->
+
+    <!-- MOBILE MENU OVERLAY -->
+    <div id="mobile-menu-overlay"
+        class="fixed inset-0 z-[150] bg-black/95 backdrop-blur-xl menu-closed flex flex-col p-8 lg:hidden">
+        <div class="flex justify-between items-center mb-12">
+            <img src="logo.png" class="w-12 h-12 object-contain" alt="FOF Menu Logo">
+            <button onclick="toggleMobileMenu()" title="Fermer le menu" class="p-2 text-cyan-400">
+                <i data-lucide="x" class="w-8 h-8"></i>
+            </button>
+        </div>
+        <nav class="flex flex-col gap-8 text-center">
+            <button onclick="changeView('dashboard'); toggleMobileMenu()"
+                class="text-2xl font-black font-orbitron text-white uppercase tracking-widest">Tableau</button>
+            <button onclick="changeView('operations'); toggleMobileMenu()"
+                class="text-2xl font-black font-orbitron text-white uppercase tracking-widest">Opérations</button>
+            <button onclick="changeView('fleet'); toggleMobileMenu()"
+                class="text-2xl font-black font-orbitron text-white uppercase tracking-widest">Catalogue Flotte</button>
+            <button onclick="changeView('service'); toggleMobileMenu()"
+                class="text-2xl font-black font-orbitron text-white uppercase tracking-widest">Gestion Service</button>
+        </nav>
+        <div class="mt-auto text-center py-8">
+            <div class="text-[10px] font-black text-cyan-500/40 uppercase tracking-[0.5em]">Tactical HUB v2.5</div>
+            <div class="text-[8px] text-slate-500 mt-2 uppercase">Mobile command interface for FOF Logistics</div>
+        </div>
+    </div>
+
+    <!-- MOBILE MENU FAB (Floating Action Button) -->
+    <button onclick="toggleMobileMenu()" title="Ouvrir le menu" class="menu-fab lg:hidden">
+        <i data-lucide="menu"></i>
+    </button>
 
     <!-- TACTICAL MODAL OVERLAY -->
     <div id="modal-overlay"

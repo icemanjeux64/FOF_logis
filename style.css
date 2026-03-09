@@ -56,6 +56,8 @@ body {
     background-color: var(--bg-dark);
     margin: 0;
     font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
 }
 
 .font-orbitron {
@@ -98,12 +100,10 @@ body {
     position: relative;
     overflow: hidden;
     padding: 1rem;
-    /* Removed global height: 100% to allow flexible cards */
 }
 
 .hud-panel h2 {
     font-size: 0.65rem;
-    /* Smaller titles */
     margin-bottom: 0.75rem;
 }
 
@@ -125,6 +125,7 @@ body {
     animation: pulse-cyan 10s ease-in-out infinite;
     padding: 0.5rem;
     height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
@@ -158,7 +159,6 @@ body {
     transition: all 0.2s ease;
     text-shadow: 0 0 10px rgba(0, 242, 255, 0);
     font-size: 0.6rem;
-    /* Smaller nav text */
 }
 
 .nav-btn i {
@@ -206,6 +206,7 @@ body {
 
     .hud-container {
         padding: 0.25rem;
+        padding-bottom: calc(0.25rem + env(safe-area-inset-bottom, 0px));
     }
 
     .hud-panel {
@@ -215,7 +216,7 @@ body {
     /* COMPACT HEADER LAYOUT */
     header {
         display: grid !important;
-        grid-template_areas:
+        grid-template-areas:
             "logo time badge"
             "title title title" !important;
         grid-template-columns: 1fr 2fr 1fr !important;
@@ -301,6 +302,7 @@ body {
 /* HAMBURGER MENU / OVERLAY */
 #mobile-menu-overlay {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px)) !important;
 }
 
 .menu-open {
@@ -342,7 +344,6 @@ body {
 
     .hud-panel h2 {
         display: none;
-        /* Hide internal panel titles to save space */
     }
 }
 
@@ -350,7 +351,6 @@ body {
 .circle-gauge {
     position: relative;
     width: 6.25rem;
-    /* 100px */
     height: 6.25rem;
     display: flex;
     align-items: center;
@@ -399,7 +399,6 @@ body {
 
     .stat-card-adaptive i {
         display: none;
-        /* Hide icons to save space */
     }
 
     .circle-gauge {
@@ -473,8 +472,7 @@ body {
 /* FLOATING MENU BUTTON (FAB) */
 .menu-fab {
     position: fixed;
-    bottom: 5.5rem;
-    /* Above bottom nav */
+    bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
     right: 1.5rem;
     width: 3.5rem;
     height: 3.5rem;
@@ -485,7 +483,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100;
+    z-index: 200;
+    /* Higher than HUD accents */
     box-shadow: 0 0 20px rgba(0, 242, 255, 0.4);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
