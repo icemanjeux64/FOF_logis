@@ -400,96 +400,93 @@ document.addEventListener('DOMContentLoaded', () => {
         const v = state.fleet.find(x => x.type === type);
         if (!v) return;
 
-        // Collect all existing movement keys for this vehicle ID
-        const movementKeys = Object.keys(state.movements).filter(k => k.startsWith(`${v.id}_`));
-        
-        // We want to show at least v.count units.
-        const indicesSet = new Set(movementKeys.map(k => parseInt(k.split('_')[1])));
+        const movementKeys = Object.keys(state.movements).filter(k => k.startsWith(v.id + "_"));
+        const indicesSet = new Set(movementKeys.map(k => parseInt(k.split("_")[1])));
         for (let i = 0; indicesSet.size < v.count; i++) {
             indicesSet.add(i);
         }
-        
         const sortedIndices = Array.from(indicesSet).sort((a, b) => a - b);
 
-        // Logic de réconciliation globale : on s'assure que state.movements reflète v.inMission
         let activeLogCount = sortedIndices.filter(idx => {
-            const mk = `${v.id}_${idx}`;
+            const mk = v.id + "_" + idx;
             return state.movements[mk] && state.movements[mk].isLogged;
         }).length;
 
         let missingMissions = Math.max(0, v.inMission - activeLogCount);
 
-        // Appliquer la réconciliation en mémoire avant d'ouvrir quoi que ce soit
         if (missingMissions > 0) {
             sortedIndices.forEach(idx => {
-                const mk = `${v.id}_${idx}`;
+                const mk = v.id + "_" + idx;
                 if (missingMissions > 0 && !(state.movements[mk] && state.movements[mk].isLogged)) {
                     if (!state.movements[mk]) {
                         state.movements[mk] = {
-                            indicatif: `${v.type.split(' ')[0]}-${idx + 1}`,
-                            crew: v.crew || '',
-                            mission: 'MOUVEMENT DÉTECTÉ (RÉCONCILIATION)',
-                            status: 'En cours',
-                            condition: 'Opérationnel',
-                            remark: ''
+                            indicatif: v.type.split(" ")[0] + "-" + (idx + 1),
+                            crew: v.crew || "",
+                            mission: "MOUVEMENT DETECTE (RECONCILIATION)",
+                            status: "En cours",
+                            condition: "Operationnel",
+                            remark: ""
                         };
                     }
                     state.movements[mk].isLogged = true;
-                    state.movements[mk].status = 'En cours';
+                    state.movements[mk].status = "En cours";
                     missingMissions--;
                 }
             });
         }
 
         if (sortedIndices.length === 1) {
-            openUnitModal(`${v.id}_${sortedIndices[0]}`);
+            openUnitModal(v.id + "_" + sortedIndices[0]);
         } else {
-            // Show selection modal
-            const overlay = document.getElementById('modal-overlay');
-            const content = document.getElementById('modal-content');
+            const overlay = document.getElementById("modal-overlay");
+            const content = document.getElementById("modal-content");
+
+            let buttonsHtml = sortedIndices.map((idx) => {
+                const unitKey = v.id + "_" + idx;
+                const m = state.movements[unitKey];
+                const isMission = (m && m.status === "En cours");
+                const indicatif = (m && m.indicatif) || (v.type.split(" ")[0] + "-" + (idx + 1));
+                const mission = (m && m.mission) || "RAS";
+                const statusText = isMission ? "EN MISSION" : "EN BASE";
+                const statusClass = isMission ? "text-green-500" : "text-blue-500";
+                
+                return `
+                    <button onclick="openUnitModal('${unitKey}')" title="Gerer l'unite ${idx + 1}"
+                            class="p-4 bg-black/40 border border-cyan-500/10 rounded-lg flex justify-between items-center hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group">
+                        <div class="flex flex-col items-start">
+                            <span class="text-[10px] font-black text-white uppercase group-hover:text-cyan-400">UNITE ${idx + 1}</span>
+                            <span class="text-[8px] text-slate-500 uppercase font-bold">${indicatif}</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="flex flex-col items-end">
+                                <span class="text-[8px] font-black ${statusClass} uppercase">${statusText}</span>
+                                <span class="text-[7px] text-slate-600 font-bold">${mission}</span>
+                            </div>
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-700 group-hover:text-cyan-400"></i>
+                        </div>
+                    </button>
+                `;
+            }).join("");
 
             content.innerHTML = `
                 <div class="p-6">
                     <div class="flex justify-between items-start mb-6">
                         <div>
-                            <div class="text-[9px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1">Sélection d'Unité</div>
+                            <div class="text-[9px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1">Selection d'Unite</div>
                             <h3 class="text-xl font-black text-white uppercase font-orbitron">${v.type} <span class="text-cyan-400 opacity-50 text-sm">x${v.count}</span></h3>
                         </div>
                         <button onclick="closeModal()" title="Fermer" class="text-slate-500 hover:text-white transition-all">
                             <i data-lucide="x" class="w-5 h-5"></i>
                         </button>
                     </div>
-
                     <div class="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                        ${sortedIndices.map((idx) => {
-                const unitKey = `${v.id}_${idx}`;
-                const isMission = (state.movements[unitKey] && state.movements[unitKey].status === 'En cours');
-                
-                return `
-                                <button onclick="openUnitModal('${unitKey}')" title="Gérer l'unité ${idx + 1}"
-                                        class="p-4 bg-black/40 border border-cyan-500/10 rounded-lg flex justify-between items-center hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group">
-                                    <div class="flex flex-col items-start">
-                                        <span class="text-[10px] font-black text-white uppercase group-hover:text-cyan-400">UNITÉ ${idx + 1}</span>
-                                        <span class="text-[8px] text-slate-500 uppercase font-bold">${(state.movements[unitKey] && state.movements[unitKey].indicatif) || `${v.type.split(' ')[0]}-${idx + 1}`}</span>
-                                    </div>
-                                    <div class="flex items-center gap-3">
-                                        <div class="flex flex-col items-end">
-                                            <span class="text-[8px] font-black ${isMission ? 'text-green-500' : 'text-blue-500'} uppercase">
-                                                ${isMission ? 'EN MISSION' : 'EN BASE'}
-                                            </span>
-                                            <span class="text-[7px] text-slate-600 font-bold">${(state.movements[unitKey] && state.movements[unitKey].mission) || 'RAS'}</span>
-                                        </div>
-                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-700 group-hover:text-cyan-400"></i>
-                                    </div>
-                                </button>
-                            `;
-            }).join('')}
+                        ${buttonsHtml}
                     </div>
                 </div>
             `;
 
-            overlay.classList.remove('hidden');
-            overlay.classList.add('flex');
+            overlay.classList.remove("hidden");
+            overlay.classList.add("flex");
             lucide.createIcons();
         }
     };
