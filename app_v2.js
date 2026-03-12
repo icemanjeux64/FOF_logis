@@ -404,28 +404,46 @@ document.addEventListener('DOMContentLoaded', () => {
         const movementKeys = Object.keys(state.movements).filter(k => k.startsWith(`${v.id}_`));
         
         // We want to show at least v.count units.
-        // We also want to show any unit that has an active movement, even if v.count is out of sync.
         const indicesSet = new Set(movementKeys.map(k => parseInt(k.split('_')[1])));
-        
-        // Ensure we have at least v.count slots shown (starting from 0)
         for (let i = 0; indicesSet.size < v.count; i++) {
             indicesSet.add(i);
         }
         
         const sortedIndices = Array.from(indicesSet).sort((a, b) => a - b);
 
+        // Logic de réconciliation globale : on s'assure que state.movements reflète v.inMission
+        let activeLogCount = sortedIndices.filter(idx => {
+            const mk = `${v.id}_${idx}`;
+            return state.movements[mk] && state.movements[mk].isLogged;
+        }).length;
+
+        let missingMissions = Math.max(0, v.inMission - activeLogCount);
+
+        // Appliquer la réconciliation en mémoire avant d'ouvrir quoi que ce soit
+        if (missingMissions > 0) {
+            sortedIndices.forEach(idx => {
+                const mk = `${v.id}_${idx}`;
+                if (missingMissions > 0 && !(state.movements[mk] && state.movements[mk].isLogged)) {
+                    if (!state.movements[mk]) {
+                        state.movements[mk] = {
+                            indicatif: `${v.type.split(' ')[0]}-${idx + 1}`,
+                            crew: v.crew || '',
+                            mission: 'MOUVEMENT DÉTECTÉ (RÉCONCILIATION)',
+                            status: 'En cours',
+                            condition: 'Opérationnel',
+                            remark: ''
+                        };
+                    }
+                    state.movements[mk].isLogged = true;
+                    state.movements[mk].status = 'En cours';
+                    missingMissions--;
+                }
+            });
+        }
+
         if (sortedIndices.length === 1) {
             openUnitModal(`${v.id}_${sortedIndices[0]}`);
         } else {
-            // Logic de réconciliation : si v.inMission est > au nombre de logs actifs, 
-            // on marque les premières unités disponibles comme étant en mission.
-            let activeLogCount = sortedIndices.filter(idx => {
-                const mk = `${v.id}_${idx}`;
-                return state.movements[mk] && state.movements[mk].isLogged;
-            }).length;
-
-            let missingMissions = Math.max(0, v.inMission - activeLogCount);
-
             // Show selection modal
             const overlay = document.getElementById('modal-overlay');
             const content = document.getElementById('modal-content');
@@ -445,14 +463,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                         ${sortedIndices.map((idx) => {
                 const unitKey = `${v.id}_${idx}`;
-                let isMission = (state.movements[unitKey] && state.movements[unitKey].isLogged) || false;
+                const isMission = (state.movements[unitKey] && state.movements[unitKey].status === 'En cours');
                 
-                // Réconciliation forcée si le compte global indique une mission mais qu'il n'y a pas de log
-                if (!isMission && missingMissions > 0) {
-                    isMission = true;
-                    missingMissions--;
-                }
-
                 return `
                                 <button onclick="openUnitModal('${unitKey}')" title="Gérer l'unité ${idx + 1}"
                                         class="p-4 bg-black/40 border border-cyan-500/10 rounded-lg flex justify-between items-center hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group">
