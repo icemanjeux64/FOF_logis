@@ -113,7 +113,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         state.movements = {}; // Reset local movements for fresh sync
                         Object.keys(response.movements).forEach(indicatif => {
                             const m = response.movements[indicatif];
-                            const v = state.fleet.find(f => f.type === m.vehicleType);
+                            // Version robuste du mapping (insensible à la casse et aux espaces)
+                            const v = state.fleet.find(f => 
+                                f.type.trim().toUpperCase() === m.vehicleType.trim().toUpperCase()
+                            );
                             if (v) {
                                 // Extract index from indicatif (e.g., "AMB-1" -> index 0)
                                 const match = m.indicatif.match(/-(\d+)$/);
