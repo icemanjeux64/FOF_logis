@@ -658,12 +658,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             class="flex-1 py-4 bg-cyan-600 border border-cyan-400 text-white font-black uppercase tracking-widest text-[10px] rounded hover:bg-cyan-500 transition-all shadow-[0_0_20px_rgba(0,242,255,0.1)] active:scale-95">
                         Transmettre les Ordres
                     </button>
-                    ${m.status === 'En cours' ? `
+                    ${m.isLogged ? `
                         <button onclick="finishMission('${unitKey}')" title="Clôturer la mission"
                                 class="flex-1 py-4 bg-red-600/20 border border-red-500/40 text-red-500 font-black uppercase tracking-widest text-[10px] rounded hover:bg-red-600 hover:text-white transition-all active:scale-95">
                             Finir la Mission
                         </button>
-                    ` : ''}
+                    ` : `
+                        <button onclick="undeployVehicle(${v.id}, '${unitKey}')" title="Ranger le véhicule au garage"
+                                class="flex-1 py-4 bg-slate-700/40 border border-slate-500/40 text-slate-300 font-black uppercase tracking-widest text-[10px] rounded hover:bg-slate-600 hover:text-white transition-all active:scale-95">
+                            Ranger au Garage
+                        </button>
+                    `}
                 </div>
             </div>
         `;
@@ -824,6 +829,56 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Mise à jour optimiste
                 v.count++;
                 state.supply -= v.cost;
+                render();
+
+                // Sync avec le serveur
+                fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({
+                        action: 'update',
+                        vehicle: {
+                            id: v.id,
+                            deployed: v.count,
+                            inMission: v.inMission
+                        }
+                    })
+                }).then(() => {
+                    // Sync supply
+                    return fetch(API_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            action: 'sync_globals',
+                            data: { supply: state.supply }
+                        })
+                    });
+                }).then(() => {
+                    setTimeout(() => init(true), 1000);
+                });
+            }
+        );
+    };
+
+    window.undeployVehicle = (id, unitKey) => {
+        const v = state.fleet.find(x => x.id === id);
+        if (!v) return;
+
+        if (v.count <= 0) return;
+
+        showTacticalConfirm(
+            "Ranger au Garage",
+            `Souhaitez-vous ranger ce ${v.type} au garage ?<br><span class="text-cyan-400">+${v.cost} points de supply seront récupérés.</span>`,
+            () => {
+                // Mise à jour optimiste
+                v.count--;
+                state.supply += v.cost;
+                
+                // On s'assure que le mouvement local est nettoyé
+                if (state.movements[unitKey]) {
+                    delete state.movements[unitKey];
+                }
+                
                 render();
 
                 // Sync avec le serveur
