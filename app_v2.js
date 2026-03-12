@@ -397,8 +397,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const v = state.fleet.find(x => x.type === type);
         if (!v) return;
 
-        if (v.count === 1) {
-            openUnitModal(`${v.id}_0`);
+        // Collect all existing movement keys for this vehicle ID
+        const movementKeys = Object.keys(state.movements).filter(k => k.startsWith(`${v.id}_`));
+        
+        // We want to show at least v.count units.
+        // We also want to show any unit that has an active movement, even if v.count is out of sync.
+        const indicesSet = new Set(movementKeys.map(k => parseInt(k.split('_')[1])));
+        
+        // Ensure we have at least v.count slots shown (starting from 0)
+        for (let i = 0; indicesSet.size < v.count; i++) {
+            indicesSet.add(i);
+        }
+        
+        const sortedIndices = Array.from(indicesSet).sort((a, b) => a - b);
+
+        if (sortedIndices.length === 1) {
+            openUnitModal(`${v.id}_${sortedIndices[0]}`);
         } else {
             // Show selection modal
             const overlay = document.getElementById('modal-overlay');
@@ -417,15 +431,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
 
                     <div class="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                        ${Array.from({ length: v.count }).map((_, i) => {
-                const unitKey = `${v.id}_${i}`;
-                const isMission = state.movements[unitKey]?.status === 'En cours';
+                        ${sortedIndices.map((idx) => {
+                const unitKey = `${v.id}_${idx}`;
+                const isMission = state.movements[unitKey]?.isLogged || false;
                 return `
-                                <button onclick="openUnitModal('${unitKey}')" title="Gérer l'unité ${i + 1}"
+                                <button onclick="openUnitModal('${unitKey}')" title="Gérer l'unité ${idx + 1}"
                                         class="p-4 bg-black/40 border border-cyan-500/10 rounded-lg flex justify-between items-center hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group">
                                     <div class="flex flex-col items-start">
-                                        <span class="text-[10px] font-black text-white uppercase group-hover:text-cyan-400">UNITÉ ${i + 1}</span>
-                                        <span class="text-[8px] text-slate-500 uppercase font-bold">${state.movements[unitKey]?.indicatif || `${v.type.split(' ')[0]}-${i + 1}`}</span>
+                                        <span class="text-[10px] font-black text-white uppercase group-hover:text-cyan-400">UNITÉ ${idx + 1}</span>
+                                        <span class="text-[8px] text-slate-500 uppercase font-bold">${state.movements[unitKey]?.indicatif || `${v.type.split(' ')[0]}-${idx + 1}`}</span>
                                     </div>
                                     <div class="flex items-center gap-3">
                                         <div class="flex flex-col items-end">
