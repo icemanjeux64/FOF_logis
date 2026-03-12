@@ -808,6 +808,53 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     };
 
+    window.deployVehicle = (id) => {
+        const v = state.fleet.find(x => x.id === id);
+        if (!v) return;
+
+        if (state.supply < v.cost) {
+            showTacticalConfirm("Ressources Insuffisantes", `Il vous faut ${v.cost} points de supply pour déployer ce ${v.type}.`, () => { });
+            return;
+        }
+
+        showTacticalConfirm(
+            "Confirmation de Déploiement",
+            `Voulez-vous déployer un ${v.type} pour ${v.cost} supply ?`,
+            () => {
+                // Mise à jour optimiste
+                v.count++;
+                state.supply -= v.cost;
+                render();
+
+                // Sync avec le serveur
+                fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({
+                        action: 'update',
+                        vehicle: {
+                            id: v.id,
+                            deployed: v.count,
+                            inMission: v.inMission
+                        }
+                    })
+                }).then(() => {
+                    // Sync supply
+                    return fetch(API_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            action: 'sync_globals',
+                            data: { supply: state.supply }
+                        })
+                    });
+                }).then(() => {
+                    setTimeout(() => init(true), 1000);
+                });
+            }
+        );
+    };
+
     window.updateBaseStat = (key, currentVal) => {
         const labels = { 'supply': 'Gestion des Réserves (Supply)', 'personnel': 'Effectifs (Personnel)', 'medics': 'V2 / EVS' };
 
