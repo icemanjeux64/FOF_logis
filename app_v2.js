@@ -653,22 +653,24 @@ document.addEventListener('DOMContentLoaded', () => {
                               class="bg-transparent text-white font-bold w-full outline-none text-[10px] min-h-[50px] resize-none uppercase">${m.remark || ''}</textarea>
                 </div>
 
-                <div class="flex flex-col sm:flex-row gap-3">
+                <div class="flex flex-col gap-3">
                     <button onclick="syncMovement('${unitKey}')" title="Transmettre les ordres au serveur"
-                            class="flex-1 py-4 bg-cyan-600 border border-cyan-400 text-white font-black uppercase tracking-widest text-[10px] rounded hover:bg-cyan-500 transition-all shadow-[0_0_20px_rgba(0,242,255,0.1)] active:scale-95">
+                            class="w-full py-4 bg-cyan-600 border border-cyan-400 text-white font-black uppercase tracking-widest text-[10px] rounded hover:bg-cyan-500 transition-all shadow-[0_0_20px_rgba(0,242,255,0.1)] active:scale-95">
                         Transmettre les Ordres
                     </button>
-                    ${m.isLogged ? `
-                        <button onclick="finishMission('${unitKey}')" title="Clôturer la mission"
-                                class="flex-1 py-4 bg-red-600/20 border border-red-500/40 text-red-500 font-black uppercase tracking-widest text-[10px] rounded hover:bg-red-600 hover:text-white transition-all active:scale-95">
-                            Finir la Mission
-                        </button>
-                    ` : `
+                    
+                    <div class="flex gap-3">
+                        ${m.isLogged ? `
+                            <button onclick="finishMission('${unitKey}')" title="Clôturer la mission"
+                                    class="flex-1 py-3 bg-red-600/20 border border-red-500/40 text-red-500 font-black uppercase tracking-widest text-[10px] rounded hover:bg-red-600 hover:text-white transition-all active:scale-95">
+                                Finir la Mission
+                            </button>
+                        ` : ''}
                         <button onclick="undeployVehicle(${v.id}, '${unitKey}')" title="Ranger le véhicule au garage"
-                                class="flex-1 py-4 bg-slate-700/40 border border-slate-500/40 text-slate-300 font-black uppercase tracking-widest text-[10px] rounded hover:bg-slate-600 hover:text-white transition-all active:scale-95">
+                                class="flex-1 py-3 bg-slate-800 border border-slate-700 text-slate-400 font-black uppercase tracking-widest text-[10px] rounded hover:bg-slate-700 hover:text-white transition-all active:scale-95">
                             Ranger au Garage
                         </button>
-                    `}
+                    </div>
                 </div>
             </div>
         `;
@@ -874,7 +876,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 v.count--;
                 state.supply += v.cost;
                 
-                // On s'assure que le mouvement local est nettoyé
+                // Si l'unité avait une mission active, on la clôture proprement sur le serveur
+                const m = state.movements[unitKey];
+                let syncPromise = Promise.resolve();
+                
+                if (m && m.isLogged) {
+                    m.status = 'Rentrée Garage';
+                    syncPromise = fetch(API_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            action: 'log_equipage',
+                            data: {
+                                vehicleType: v.type,
+                                idIndicatif: m.indicatif,
+                                crew: m.crew || "N/A",
+                                mission: m.mission,
+                                status: 'Terminé (Retour Garage)',
+                                condition: m.condition,
+                                remark: "Véhicule rangé au garage."
+                            }
+                        })
+                    });
+                }
+
+                // Nettoyage local
                 if (state.movements[unitKey]) {
                     delete state.movements[unitKey];
                 }
@@ -882,17 +908,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 render();
 
                 // Sync avec le serveur
-                fetch(API_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    body: JSON.stringify({
-                        action: 'update',
-                        vehicle: {
-                            id: v.id,
-                            deployed: v.count,
-                            inMission: v.inMission
-                        }
-                    })
+                syncPromise.then(() => {
+                    return fetch(API_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({
+                            action: 'update',
+                            vehicle: {
+                                id: v.id,
+                                deployed: v.count,
+                                inMission: v.inMission
+                            }
+                        })
+                    });
                 }).then(() => {
                     // Sync supply
                     return fetch(API_URL, {
