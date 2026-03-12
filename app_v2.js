@@ -417,6 +417,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sortedIndices.length === 1) {
             openUnitModal(`${v.id}_${sortedIndices[0]}`);
         } else {
+            // Logic de réconciliation : si v.inMission est > au nombre de logs actifs, 
+            // on marque les premières unités disponibles comme étant en mission.
+            let activeLogCount = sortedIndices.filter(idx => {
+                const mk = `${v.id}_${idx}`;
+                return state.movements[mk] && state.movements[mk].isLogged;
+            }).length;
+
+            let missingMissions = Math.max(0, v.inMission - activeLogCount);
+
             // Show selection modal
             const overlay = document.getElementById('modal-overlay');
             const content = document.getElementById('modal-content');
@@ -436,7 +445,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                         ${sortedIndices.map((idx) => {
                 const unitKey = `${v.id}_${idx}`;
-                const isMission = (state.movements[unitKey] && state.movements[unitKey].isLogged) || false;
+                let isMission = (state.movements[unitKey] && state.movements[unitKey].isLogged) || false;
+                
+                // Réconciliation forcée si le compte global indique une mission mais qu'il n'y a pas de log
+                if (!isMission && missingMissions > 0) {
+                    isMission = true;
+                    missingMissions--;
+                }
+
                 return `
                                 <button onclick="openUnitModal('${unitKey}')" title="Gérer l'unité ${idx + 1}"
                                         class="p-4 bg-black/40 border border-cyan-500/10 rounded-lg flex justify-between items-center hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group">
@@ -793,9 +809,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Visual feedback
         const btn = event.currentTarget;
-        const originalText = btn.innerText;
-        btn.innerText = "TRANSMISSION...";
-        btn.disabled = true;
+        if (btn && btn.innerText) {
+            btn.innerText = "TRANSMISSION...";
+            btn.disabled = true;
+        }
+
+        const isNewMission = !m.isLogged;
 
         fetch(API_URL, {
             method: 'POST',
@@ -813,7 +832,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             })
         }).then(() => {
-            m.isLogged = true;
+            m.isLogged = (m.status === 'En cours');
+            
+            // Sync mission count to the spreadsheet grid
+            if (isNewMission && m.status === 'En cours') {
+                v.inMission++;
+            } else if (m.status === 'Terminé' || m.status.includes('Garage')) {
+                v.inMission = Math.max(0, v.inMission - 1);
+            }
+
+            return fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({
+                    action: 'update',
+                    vehicle: {
+                        id: v.id,
+                        deployed: v.count,
+                        inMission: v.inMission
+                    }
+                })
+            });
+        }).then(() => {
             closeModal();
             setTimeout(() => init(true), 1000);
         });
