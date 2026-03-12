@@ -436,20 +436,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                         ${sortedIndices.map((idx) => {
                 const unitKey = `${v.id}_${idx}`;
-                const isMission = state.movements[unitKey]?.isLogged || false;
+                const isMission = (state.movements[unitKey] && state.movements[unitKey].isLogged) || false;
                 return `
                                 <button onclick="openUnitModal('${unitKey}')" title="Gérer l'unité ${idx + 1}"
                                         class="p-4 bg-black/40 border border-cyan-500/10 rounded-lg flex justify-between items-center hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group">
                                     <div class="flex flex-col items-start">
                                         <span class="text-[10px] font-black text-white uppercase group-hover:text-cyan-400">UNITÉ ${idx + 1}</span>
-                                        <span class="text-[8px] text-slate-500 uppercase font-bold">${state.movements[unitKey]?.indicatif || `${v.type.split(' ')[0]}-${idx + 1}`}</span>
+                                        <span class="text-[8px] text-slate-500 uppercase font-bold">${(state.movements[unitKey] && state.movements[unitKey].indicatif) || `${v.type.split(' ')[0]}-${idx + 1}`}</span>
                                     </div>
                                     <div class="flex items-center gap-3">
                                         <div class="flex flex-col items-end">
                                             <span class="text-[8px] font-black ${isMission ? 'text-green-500' : 'text-blue-500'} uppercase">
                                                 ${isMission ? 'EN MISSION' : 'EN BASE'}
                                             </span>
-                                            <span class="text-[7px] text-slate-600 font-bold">${state.movements[unitKey]?.mission || 'RAS'}</span>
+                                            <span class="text-[7px] text-slate-600 font-bold">${(state.movements[unitKey] && state.movements[unitKey].mission) || 'RAS'}</span>
                                         </div>
                                         <i data-lucide="chevron-right" class="w-4 h-4 text-slate-700 group-hover:text-cyan-400"></i>
                                     </div>
