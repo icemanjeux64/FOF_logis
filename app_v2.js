@@ -1,4 +1,4 @@
-// app.js - FOF Tactical HUD V2 Logic
+// app_v2.js - FOF HUD
 document.addEventListener('DOMContentLoaded', () => {
 
     const API_URL = 'https://script.google.com/macros/s/AKfycbxEwlrKIZNgIb-4WEBPeaz35ekVvRuL8HRAplehgssnKKg6XG0-t9zze62TOgBZK2Q/exec';
